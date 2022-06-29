@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"net/http"
 	"net/url"
 	"os"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
 	svix "github.com/svix/svix-webhooks/go"
 )
@@ -17,13 +18,11 @@ const (
 
 	healthCheckPath = "/_healthcheck"
 
-	svixToken  = "testsk_CSkhagouqu-JXgZznr35dG2TYTmsCPnb"
-	svixServer = "https://api.eu.svix.com"
+	svixServer       = "https://api.eu.svix.com"
+	svixAPIKeyEnvVar = "SVIX_API_KEY_DEV"
 )
 
 var Version = "v0.0"
-
-var svixAppID = "app_2BEv2hBcE2ICiB6hq1QOVTVBWgF"
 
 func main() {
 	fmt.Println("version:", Version)
@@ -39,14 +38,24 @@ func main() {
 		}),
 	)
 
+	if err := godotenv.Load(); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+	}
+
+	svixToken, ok := os.LookupEnv(svixAPIKeyEnvVar)
+	if !ok {
+		_, _ = fmt.Fprintln(os.Stderr, fmt.Errorf(
+			"could not start the application: %s env var was not found", svixAPIKeyEnvVar))
+		os.Exit(1)
+	}
+
 	serverUrl, _ := url.Parse(svixServer)
 	svixClient := svix.New(svixToken, &svix.SvixOptions{
 		ServerUrl: serverUrl,
 	})
 	spew.Dump(svixClient)
 
-	_ = svixClient.Application.Delete("app_2B9tnanuDzI0jaHJz7dACXZ57Hy")
-
+	var svixAppID = "app_2BEv2hBcE2ICiB6hq1QOVTVBWgF"
 	app, err := svixClient.Application.GetOrCreate(&svix.ApplicationIn{
 		Name: "Formance Webhooks Application",
 		Uid:  &svixAppID,
