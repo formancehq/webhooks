@@ -23,6 +23,7 @@ tasks:
       - benthos test --log OFF .cloud/helm/benthos/*
 
   test:go:
+    deps: [mongo]
     cmds:
       - go test -coverpkg ./... -coverprofile coverage.out -covermode atomic ./...
 
