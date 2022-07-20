@@ -1,4 +1,4 @@
-name: test
+name: Lint & Test
 on:
   workflow_call:
     inputs:
@@ -9,7 +9,7 @@ on:
         description: "Go version to use for the tests"
 
 jobs:
-  test:
+  lint-test:
     runs-on: ubuntu-latest
     services:
       mongo:
@@ -17,19 +17,17 @@ jobs:
         env:
           MONGO_INITDB_ROOT_USERNAME: admin
           MONGO_INITDB_ROOT_PASSWORD: admin
+          MONGODB_CONN_STRING: "mongodb://admin:admin@localhost:27017/"
     steps:
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ inputs.go-version }}
       - uses: actions/checkout@v3
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
-        with:
-          # Optional: version of golangci-lint to use in form of v1.2 or v1.2.3 or `latest` to use the latest version
-          version: latest
       - name: Install Task
         uses: arduino/setup-task@v1
-      - name: Run tests
-        run: task install-benthos test
+      - name: Install tools
+        run: task install
+      - name: Run lint & test
+        run: task lint test
       - name: Upload coverage to Codecov
         run: bash <(curl -s https://codecov.io/bash)

@@ -21,6 +21,9 @@ import (
 func TestAPI(t *testing.T) {
 	store, err := mongodb.NewStore()
 	require.NoError(t, err)
+	defer func(store mongodb.Store) {
+		require.NoError(t, store.Close())
+	}(store)
 	r := server.NewWebhooksHandler(store)
 
 	t.Run("no configs", func(t *testing.T) {
@@ -114,6 +117,9 @@ func TestAPI(t *testing.T) {
 func TestGetConfigsByUserID(t *testing.T) {
 	store, err := mongodb.NewStore()
 	require.NoError(t, err)
+	defer func(store mongodb.Store) {
+		require.NoError(t, store.Close())
+	}(store)
 	r := server.NewWebhooksHandler(store)
 
 	req := httptest.NewRequest(
@@ -125,6 +131,9 @@ func TestGetConfigsByUserID(t *testing.T) {
 func TestInsertConfigsByUserID(t *testing.T) {
 	store, err := mongodb.NewStore()
 	require.NoError(t, err)
+	defer func(store mongodb.Store) {
+		require.NoError(t, store.Close())
+	}(store)
 	r := server.NewWebhooksHandler(store)
 
 	t.Run("invalid userId", func(t *testing.T) {

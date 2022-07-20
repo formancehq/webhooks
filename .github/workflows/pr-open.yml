@@ -12,5 +12,5 @@ jobs:
   pr:
     uses: numary/gh-workflows/.github/workflows/pr-style.yml@main
 
-  test:
-    uses: ./.github/workflows/test.yml
+  lint-test:
+    uses: ./.github/workflows/lint-test.yml

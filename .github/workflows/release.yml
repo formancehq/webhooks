@@ -4,12 +4,10 @@ on:
     types: [prereleased, released]
 
 jobs:
-  test:
-    uses: numary/gh-workflows/.github/workflows/golang-test.yml@main
-    with:
-      go_version: 1.18
+  lint-test:
+    uses: ./.github/workflows/lint-test.yml
 
-  build:
+  build-prod:
     uses: numary/gh-workflows/.github/workflows/docker-build-prod.yml@main
     needs:
       - test
@@ -22,7 +20,7 @@ jobs:
     secrets:
       NUMARY_GITHUB_TOKEN: ${{ secrets.NUMARY_GITHUB_TOKEN }}
 
-  deploy:
+  deploy-prod:
     needs:
       - build
     uses: numary/gh-workflows/.github/workflows/deploy-production.yml@main
