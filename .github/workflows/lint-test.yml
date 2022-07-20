@@ -17,7 +17,6 @@ jobs:
         env:
           MONGO_INITDB_ROOT_USERNAME: admin
           MONGO_INITDB_ROOT_PASSWORD: admin
-          MONGODB_CONN_STRING: "mongodb://admin:admin@localhost:27017/"
     steps:
       - uses: actions/setup-go@v3
         with:
@@ -29,5 +28,7 @@ jobs:
         run: task install
       - name: Run lint & test
         run: task lint test
+        env:
+          MONGODB_CONN_STRING: "mongodb://admin:admin@localhost:27017/"
       - name: Upload coverage to Codecov
         run: bash <(curl -s https://codecov.io/bash)
