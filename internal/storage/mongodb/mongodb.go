@@ -29,6 +29,8 @@ func NewStore() (Store, error) {
 		return Store{}, errors.New("env var MONGODB_CONN_STRING not found")
 	}
 
+	sharedlogging.Infof("connecting to mongoDB URI: %s", mongoDBUri)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
