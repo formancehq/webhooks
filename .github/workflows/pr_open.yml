@@ -12,10 +12,5 @@ jobs:
   pr:
     uses: numary/gh-workflows/.github/workflows/pr-style.yml@main
 
-  lint:
-    uses: ./.github/workflows/golangci-lint.yaml
-
   test:
     uses: ./.github/workflows/test.yaml
-    needs:
-      - lint
