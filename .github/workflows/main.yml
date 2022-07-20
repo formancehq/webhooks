@@ -20,7 +20,7 @@ jobs:
   build:
     uses: numary/gh-workflows/.github/workflows/docker-build.yml@main
     needs:
-      - Tests
+      - test
     with:
       go_version: 1.18
       service: webhooks

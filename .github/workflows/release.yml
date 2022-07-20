@@ -4,15 +4,15 @@ on:
     types: [prereleased, released]
 
 jobs:
-  Test:
+  test:
     uses: numary/gh-workflows/.github/workflows/golang-test.yml@main
     with:
       go_version: 1.18
 
-  Build:
+  build:
     uses: numary/gh-workflows/.github/workflows/docker-build-prod.yml@main
     needs:
-      - Test
+      - test
     with:
       go_version: 1.18
       service: webhooks
@@ -22,9 +22,9 @@ jobs:
     secrets:
       NUMARY_GITHUB_TOKEN: ${{ secrets.NUMARY_GITHUB_TOKEN }}
 
-  Deploy:
+  deploy:
     needs:
-      - Build
+      - build
     uses: numary/gh-workflows/.github/workflows/deploy-production.yml@main
     with:
       service: webhooks

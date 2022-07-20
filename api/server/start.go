@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	Version  = "dev"
+	Version  = "develop"
 	BindAddr = ":8080"
 )
 
