@@ -13,11 +13,9 @@ jobs:
     uses: numary/gh-workflows/.github/workflows/pr-style.yml@main
 
   lint:
-    uses: numary/gh-workflows/.github/workflows/golang-lint.yml@main
-    with:
-      go_version: 1.18
+    uses: ./.github/workflows/golangci-lint.yaml
 
   test:
-    uses: numary/gh-workflows/.github/workflows/golang-test.yml@main
-    with:
-      go_version: 1.18
+    uses: ./.github/workflows/test.yaml
+    needs:
+      - lint

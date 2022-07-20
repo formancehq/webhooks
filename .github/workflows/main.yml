@@ -6,29 +6,12 @@ on:
 name: main
 jobs:
   lint:
-    uses: numary/gh-workflows/.github/workflows/golang-lint.yml@main
-    with:
-      go_version: 1.18
+    uses: ./.github/workflows/golangci-lint.yaml
 
   test:
     uses: ./.github/workflows/test.yaml
     needs:
       - lint
-    with:
-      go_version: 1.18
-
-  build:
-    uses: numary/gh-workflows/.github/workflows/docker-build.yml@main
-    needs:
-      - test
-    with:
-      go_version: 1.18
-      service: webhooks
-      version: develop
-      sha: ${{ github.sha }}
-      env: staging
-    secrets:
-      NUMARY_GITHUB_TOKEN: ${{ secrets.NUMARY_GITHUB_TOKEN }}
 
   build-main:
     uses: numary/gh-workflows/.github/workflows/docker-build.yml@main
@@ -41,9 +24,22 @@ jobs:
     secrets:
       NUMARY_GITHUB_TOKEN: ${{ secrets.NUMARY_GITHUB_TOKEN }}
 
-  deploy:
+  build-staging:
+    uses: numary/gh-workflows/.github/workflows/docker-build.yml@main
     needs:
-      - build
+      - test
+    with:
+      go_version: 1.18
+      service: webhooks
+      version: develop
+      sha: ${{ github.sha }}
+      env: staging
+    secrets:
+      NUMARY_GITHUB_TOKEN: ${{ secrets.NUMARY_GITHUB_TOKEN }}
+
+  deploy-staging:
+    needs:
+      - build-staging
     uses: numary/gh-workflows/.github/workflows/deploy-staging.yml@main
     with:
       service: webhooks
