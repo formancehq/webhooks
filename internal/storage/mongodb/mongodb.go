@@ -2,7 +2,6 @@ package mongodb
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -17,6 +16,10 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
+const (
+	defaultMongoDBConnString = "mongodb://admin:admin@localhost:27017/"
+)
+
 type Store struct {
 	uri        string
 	client     *mongo.Client
@@ -26,7 +29,7 @@ type Store struct {
 func NewStore() (Store, error) {
 	mongoDBUri := os.Getenv("MONGODB_CONN_STRING")
 	if mongoDBUri == "" {
-		return Store{}, errors.New("env var MONGODB_CONN_STRING not found")
+		mongoDBUri = defaultMongoDBConnString
 	}
 
 	sharedlogging.Infof("connecting to mongoDB URI: %s", mongoDBUri)

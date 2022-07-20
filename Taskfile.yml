@@ -88,8 +88,6 @@ tasks:
         silent: true
       - cmd: echo "xdg-open coverage.html on linux"
         silent: true
-    env:
-      MONGODB_CONN_STRING: "mongodb://admin:admin@localhost:27017/"
 
   mongo:
     cmds:
