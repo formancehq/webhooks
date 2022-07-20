@@ -30,6 +30,7 @@ func NewStore() (Store, error) {
 	}
 
 	sharedlogging.Infof("connecting to mongoDB URI: %s", mongoDBUri)
+	sharedlogging.Infof("env: %+v", os.Environ())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
