@@ -25,6 +25,6 @@ jobs:
       - name: Install Task
         uses: arduino/setup-task@v1
       - name: Run tests
-        run: task test
+        run: task install-benthos test
       - name: Upload coverage to Codecov
         run: bash <(curl -s https://codecov.io/bash)
