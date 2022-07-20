@@ -6,7 +6,7 @@ on:
 name: main
 jobs:
   test:
-    uses: ./.github/workflows/test.yaml
+    uses: ./.github/workflows/test.yml
 
   build-main:
     uses: numary/gh-workflows/.github/workflows/docker-build.yml@main
