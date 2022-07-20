@@ -5,12 +5,23 @@ vars:
   APP_VERSION: develop
   APP_SHA: ksjfsldkf
 
+  PKG: "./..."
+  FAILFAST: "-failfast"
+  TIMEOUT: "2m"
+  RUN: "''"
+
 tasks:
-  tests:
+  test:
+    deps: [test:benthos, test:go]
+
+  test:benthos:
     cmds:
-      - go test -v -coverpkg=./... -coverprofile=coverage.out ./...
-      - curl -Lsf https://sh.benthos.dev | bash
-      - benthos test --log ALL .cloud/helm/benthos/*
+      - benthos test --log OFF .cloud/helm/benthos/*
+
+  test:go:
+    cmds:
+      - go test -coverpkg ./... -coverprofile coverage.out -covermode atomic ./...
+
   ci:
     cmds:
       - go env -w GOPRIVATE=github.com/numary/go-libs-cloud
@@ -35,3 +46,50 @@ tasks:
     cmds:
       - docker tag numary:{{.SERVICE}}-{{.APP_SHA}} 288350113309.dkr.ecr.eu-west-1.amazonaws.com/numary:{{.SERVICE}}-{{.APP_VERSION}}
       - docker push 288350113309.dkr.ecr.eu-west-1.amazonaws.com/numary:{{.SERVICE}}-{{.APP_VERSION}}
+
+  build-and-install-binary:
+    cmds:
+      - go build -o {{.SERVICE}}
+      - cp {{.SERVICE}} $(go env GOPATH)/bin
+
+  install-golangci-lint:
+    cmds:
+      - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
+      - golangci-lint --version
+
+  install-benthos:
+    cmds:
+      - curl -Lsf https://sh.benthos.dev | bash
+      - benthos --version
+
+  default:
+    deps: [local:lint, local:test:go, test:benthos]
+
+  local:lint:
+    cmds:
+      - golangci-lint run -v --fix
+
+  local:test:go:
+    deps: [mongo]
+    cmds:
+      - go test -v {{.FAILFAST}} -coverpkg {{.PKG}} -coverprofile coverage.out -covermode atomic -run {{.RUN}} -timeout {{.TIMEOUT}} {{.PKG}} | sed ''/PASS/s//$(printf "\033[32mPASS\033[0m")/'' | sed ''/FAIL/s//$(printf "\033[31mFAIL\033[0m")/'' | sed ''/RUN/s//$(printf "\033[34mRUN\033[0m")/''
+      - cmd: go tool cover -html=coverage.out -o coverage.html
+        silent: true
+      - cmd: echo "To open the html coverage file, use one of the following commands:"
+        silent: true
+      - cmd: echo "open coverage.html on mac"
+        silent: true
+      - cmd: echo "xdg-open coverage.html on linux"
+        silent: true
+    env:
+      MONGODB_CONN_STRING: "mongodb://admin:admin@localhost:27017/"
+
+  mongo:
+    cmds:
+      - docker compose up -d mongo
+
+  clean:
+    cmds:
+      - go clean
+      - rm -f {{.SERVICE}} coverage.out coverage.html
+      - docker compose down -v
