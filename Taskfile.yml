@@ -26,6 +26,11 @@ tasks:
     cmds:
       - go test -coverpkg ./... -coverprofile coverage.out -covermode atomic ./...
 
+  ci:
+    cmds:
+      - go env -w GOPRIVATE=github.com/numary/go-libs-cloud
+      - go mod vendor
+
   build:
     run: once
     cmds:
