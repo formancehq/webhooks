@@ -4,7 +4,6 @@ go 1.18
 
 require (
 	github.com/golang/gddo v0.0.0-20210115222349-20d68f94ee1f
-	github.com/google/uuid v1.3.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/numary/go-libs v0.0.0-20220609103351-69aecd5d4097
 	github.com/sirupsen/logrus v1.9.0
@@ -17,7 +16,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
-	github.com/klauspost/compress v1.15.8 // indirect
+	github.com/klauspost/compress v1.15.9 // indirect
 	github.com/montanaflynn/stats v0.6.6 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
