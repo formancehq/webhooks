@@ -4,13 +4,17 @@ on:
     types: [prereleased, released]
 
 jobs:
-  lint-test:
-    uses: ./.github/workflows/lint-test.yml
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  tests:
+    uses: ./.github/workflows/tests.yml
 
   build-prod:
     uses: numary/gh-workflows/.github/workflows/docker-build-prod.yml@main
     needs:
-      - test
+      - lint
+      - tests
     with:
       go_version: 1.18
       service: webhooks

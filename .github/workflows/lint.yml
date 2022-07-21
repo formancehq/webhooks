@@ -1,0 +1,22 @@
+name: Lint
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        required: false
+        type: string
+        default: 1.18
+        description: "Go version to use for the tests"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ inputs.go-version }}
+      - uses: actions/checkout@v3
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest

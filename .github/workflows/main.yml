@@ -5,11 +5,17 @@ on:
 
 name: main
 jobs:
-  lint-test:
-    uses: ./.github/workflows/lint-test.yml
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  tests:
+    uses: ./.github/workflows/tests.yml
 
   build-main:
     uses: numary/gh-workflows/.github/workflows/docker-build.yml@main
+    needs:
+      - lint
+      - tests
     with:
       go_version: 1.18
       service: webhooks
@@ -22,7 +28,8 @@ jobs:
   build-staging:
     uses: numary/gh-workflows/.github/workflows/docker-build.yml@main
     needs:
-      - lint-test
+      - lint
+      - tests
     with:
       go_version: 1.18
       service: webhooks

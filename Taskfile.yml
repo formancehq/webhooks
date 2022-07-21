@@ -11,18 +11,14 @@ vars:
   RUN: "''"
 
 tasks:
-  lint:
-    cmds:
-      - golangci-lint run -v
+  tests:
+    deps: [tests:benthos, tests:go]
 
-  test:
-    deps: [test:benthos, test:go]
-
-  test:benthos:
+  tests:benthos:
     cmds:
       - benthos test --log OFF .cloud/helm/benthos/*
 
-  test:go:
+  tests:go:
     deps: [mongo]
     cmds:
       - go test -coverpkg ./... -coverprofile coverage.out -covermode atomic ./...
@@ -58,26 +54,26 @@ tasks:
       - cp {{.SERVICE}} $(go env GOPATH)/bin
 
   install:
-    deps: [install-golangci-lint, install-benthos]
+    deps: [install:golangci-lint, install:benthos]
 
-  install-golangci-lint:
+  install:golangci-lint:
     cmds:
       - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
       - golangci-lint --version
 
-  install-benthos:
+  install:benthos:
     cmds:
       - curl -Lsf https://sh.benthos.dev | bash
       - benthos --version
 
   default:
-    deps: [local:lint, local:test:go, test:benthos]
+    deps: [local:lint, local:tests:go, tests:benthos]
 
   local:lint:
     cmds:
       - golangci-lint run -v --fix
 
-  local:test:go:
+  local:tests:go:
     deps: [mongo]
     cmds:
       - go test -v {{.FAILFAST}} -coverpkg {{.PKG}} -coverprofile coverage.out -covermode atomic -run {{.RUN}} -timeout {{.TIMEOUT}} {{.PKG}} | sed ''/PASS/s//$(printf "\033[32mPASS\033[0m")/'' | sed ''/FAIL/s//$(printf "\033[31mFAIL\033[0m")/'' | sed ''/RUN/s//$(printf "\033[34mRUN\033[0m")/''

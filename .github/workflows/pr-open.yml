@@ -9,8 +9,11 @@ jobs:
       TERRAFORM_CLOUD_TOKEN: ${{ secrets.TERRAFORM_CLOUD_TOKEN }}
       INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
 
-  pr:
+  pr-style:
     uses: numary/gh-workflows/.github/workflows/pr-style.yml@main
 
-  lint-test:
-    uses: ./.github/workflows/lint-test.yml
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  tests:
+    uses: ./.github/workflows/tests.yml

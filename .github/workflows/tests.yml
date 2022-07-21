@@ -1,4 +1,4 @@
-name: Lint & Test
+name: Tests
 on:
   workflow_call:
     inputs:
@@ -9,7 +9,7 @@ on:
         description: "Go version to use for the tests"
 
 jobs:
-  lint-test:
+  tests:
     runs-on: ubuntu-latest
     services:
       mongo:
@@ -24,9 +24,9 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install Task
         uses: arduino/setup-task@v1
-      - name: Install tools
-        run: task install
-      - name: Run lint & test
-        run: task lint test
+      - name: Install benthos
+        run: task install:benthos
+      - name: Run tests
+        run: task tests
       - name: Upload coverage to Codecov
         run: bash <(curl -s https://codecov.io/bash)
