@@ -5,7 +5,7 @@ on:
 
 jobs:
   lint:
-    uses: ./.github/workflows/lint.yml
+    uses: numary/gh-workflows/.github/workflows/golang-lint.yml@main
 
   tests:
     uses: ./.github/workflows/tests.yml

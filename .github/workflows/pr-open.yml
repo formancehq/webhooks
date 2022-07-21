@@ -13,7 +13,7 @@ jobs:
     uses: numary/gh-workflows/.github/workflows/pr-style.yml@main
 
   lint:
-    uses: ./.github/workflows/lint.yml
+    uses: numary/gh-workflows/.github/workflows/golang-lint.yml@main
 
   tests:
     uses: ./.github/workflows/tests.yml
