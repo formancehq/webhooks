@@ -9,28 +9,7 @@ import (
 	"strings"
 
 	"github.com/golang/gddo/httputil/header"
-	"github.com/google/uuid"
-	"github.com/julienschmidt/httprouter"
 )
-
-type errInvalidParams struct {
-	status int
-	msg    string
-}
-
-func (e *errInvalidParams) Error() string {
-	return e.msg
-}
-
-func validateParams(p httprouter.Params) error {
-	_, err := uuid.Parse(p.ByName(userIdPathParam))
-	if err != nil {
-		msg := "userId path parameter should be a valid UUID"
-		return &errInvalidParams{status: http.StatusBadRequest, msg: msg}
-	}
-
-	return nil
-}
 
 type errInvalidBody struct {
 	status int

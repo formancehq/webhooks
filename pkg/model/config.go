@@ -14,7 +14,6 @@ type Config struct {
 
 type ConfigInserted struct {
 	Config     `json:",inline" bson:"inline"`
-	UserId     string    `json:"user_id" bson:"user_id"`
 	InsertedAt time.Time `json:"inserted_at" bson:"inserted_at"`
 }
 

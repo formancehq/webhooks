@@ -8,8 +8,7 @@ import (
 
 type Store interface {
 	FindAllConfigs() (sharedapi.Cursor[model.ConfigInserted], error)
-	FindConfigsByUserID(userId string) (sharedapi.Cursor[model.ConfigInserted], error)
-	InsertOneConfig(config model.Config, userId string) (primitive.ObjectID, error)
+	InsertOneConfig(config model.Config) (primitive.ObjectID, error)
 	DropConfigsCollection() error
 	Close() error
 }

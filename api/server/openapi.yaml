@@ -52,62 +52,11 @@ paths:
           description: OK
           content: {}
 
-  /configs/{userId}:
-    get:
-      summary: Get the configs for a user ID, ordered by inserted date descending.
-      operationId: getConfigsByUserID
-      tags:
-        - Configs
-      parameters:
-        - name: userId
-          in: path
-          description: User ID (UUID)
-          required: true
-          schema:
-            type: string
-            example: 583f28c0-05ea-4de7-a8ec-2f1c6d3988f4
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - cursor
-                properties:
-                  cursor:
-                    allOf:
-                      - $ref: '#/components/schemas/Cursor'
-                      - type: object
-                        properties:
-                          data:
-                            type: array
-                            items:
-                              $ref: '#/components/schemas/ConfigInserted'
-                        required:
-                          - data
-        "400":
-          description: Bad Request
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: userId path parameter should be a valid UUID
-
     post:
-      summary: Insert a new config for a user ID.
-      operationId: insertConfigsByUserID
+      summary: Insert a new config.
+      operationId: insertConfig
       tags:
         - Configs
-      parameters:
-        - name: userId
-          in: path
-          description: User ID (UUID)
-          required: true
-          schema:
-            type: string
-            example: 583f28c0-05ea-4de7-a8ec-2f1c6d3988f4
       requestBody:
         content:
           application/json:
@@ -154,7 +103,7 @@ components:
       type: object
       additionalProperties:
         type: object
-      example: {"active":true,"event_types":["TYPE"],"endpoints":["https://www.site.com"],"user_id":"90fd39c5-11a3-4add-9ea9-09f20342be3e","inserted_at":"2022-07-20T07:31:40.9Z"}
+      example: {"active":true,"event_types":["TYPE"],"endpoints":["https://www.site.com"],"inserted_at":"2022-07-20T07:31:40.9Z"}
     Cursor:
       type: object
       properties:
