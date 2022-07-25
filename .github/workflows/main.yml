@@ -17,7 +17,6 @@ jobs:
       - lint
       - tests
     with:
-      go_version: 1.18
       service: webhooks
       version: develop
       sha: ${{ github.sha }}
@@ -31,7 +30,6 @@ jobs:
       - lint
       - tests
     with:
-      go_version: 1.18
       service: webhooks
       version: develop
       sha: ${{ github.sha }}

@@ -16,7 +16,6 @@ jobs:
       - lint
       - tests
     with:
-      go_version: 1.18
       service: webhooks
       version: ${{ github.event.release.tag_name }}
       sha: ${{ github.sha }}

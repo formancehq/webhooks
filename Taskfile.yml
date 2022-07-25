@@ -67,9 +67,9 @@ tasks:
       - benthos --version
 
   default:
-    deps: [local:lint, local:tests:go, tests:benthos]
+    deps: [lint, local:tests:go, tests:benthos]
 
-  local:lint:
+  lint:
     cmds:
       - golangci-lint run -v --fix
 
@@ -77,14 +77,11 @@ tasks:
     deps: [mongo]
     cmds:
       - go test -v {{.FAILFAST}} -coverpkg {{.PKG}} -coverprofile coverage.out -covermode atomic -run {{.RUN}} -timeout {{.TIMEOUT}} {{.PKG}} | sed ''/PASS/s//$(printf "\033[32mPASS\033[0m")/'' | sed ''/FAIL/s//$(printf "\033[31mFAIL\033[0m")/'' | sed ''/RUN/s//$(printf "\033[34mRUN\033[0m")/''
-      - cmd: go tool cover -html=coverage.out -o coverage.html
-        silent: true
-      - cmd: echo "To open the html coverage file, use one of the following commands:"
-        silent: true
-      - cmd: echo "open coverage.html on mac"
-        silent: true
-      - cmd: echo "xdg-open coverage.html on linux"
-        silent: true
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "To open the html coverage file, use one of the following commands:"
+      - echo "open coverage.html on mac"
+      - echo "xdg-open coverage.html on linux"
+    silent: true
 
   mongo:
     cmds:

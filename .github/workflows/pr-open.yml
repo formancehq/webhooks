@@ -2,6 +2,7 @@ name: Pull Request - Open
 on:
   pull_request:
     types: [assigned, opened, synchronize, reopened]
+
 jobs:
   infracost:
     uses: numary/gh-workflows/.github/workflows/infracost-staging.yml@main
