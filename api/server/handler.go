@@ -24,7 +24,7 @@ type webhooksHandler struct {
 	store storage.Store
 }
 
-func NewWebhooksHandler(store storage.Store) http.Handler {
+func newWebhooksHandler(store storage.Store) http.Handler {
 	h := &webhooksHandler{
 		Router: httprouter.New(),
 		store:  store,

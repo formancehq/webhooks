@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"syscall"
 
@@ -17,37 +18,37 @@ var (
 	BindAddr = ":8080"
 )
 
-func FxOptions() fx.Option {
-	return fx.Options(
-		fx.Provide(
-			mongodb.NewStore,
-			NewWebhooksHandler,
-			NewMux,
-		),
-		fx.Invoke(Register),
-	)
-}
-
 func Start(*cobra.Command, []string) error {
 	sharedlogging.Infof("env: %+v", syscall.Environ())
 	sharedlogging.Infof("app started with version: %s", Version)
 
-	app := fx.New(FxOptions())
+	app := fx.New(StartModule())
 	app.Run()
 
 	return nil
 }
 
-func NewMux(lc fx.Lifecycle) *http.ServeMux {
-	sharedlogging.Infof("Executing NewMux.")
+func StartModule() fx.Option {
+	return fx.Module("",
+		fx.Provide(
+			mongodb.NewStore,
+			newWebhooksHandler,
+			newMux,
+		),
+		fx.Invoke(register),
+	)
+}
+
+func newMux(lc fx.Lifecycle) *http.ServeMux {
 	mux := http.NewServeMux()
 	server := &http.Server{
 		Addr:    BindAddr,
 		Handler: mux,
 	}
+
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			sharedlogging.Infof("Starting HTTP server.")
+			sharedlogging.Infof(fmt.Sprintf("starting HTTP server on %s", BindAddr))
 			go func() {
 				if err := server.ListenAndServe(); err != nil &&
 					!errors.Is(err, http.ErrServerClosed) {
@@ -57,7 +58,7 @@ func NewMux(lc fx.Lifecycle) *http.ServeMux {
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
-			sharedlogging.Infof("Stopping HTTP server.")
+			sharedlogging.Infof("stopping HTTP server")
 			return server.Shutdown(ctx)
 		},
 	})
@@ -65,6 +66,6 @@ func NewMux(lc fx.Lifecycle) *http.ServeMux {
 	return mux
 }
 
-func Register(mux *http.ServeMux, h http.Handler) {
+func register(mux *http.ServeMux, h http.Handler) {
 	mux.Handle("/", h)
 }

@@ -20,7 +20,7 @@ func TestAPI(t *testing.T) {
 	c := http.DefaultClient
 	baseURL := fmt.Sprintf("http://localhost%s", server.BindAddr)
 
-	app := fxtest.New(t, server.FxOptions())
+	app := fxtest.New(t, server.StartModule())
 	app.RequireStart()
 
 	t.Run("health check", func(t *testing.T) {
