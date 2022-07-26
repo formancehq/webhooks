@@ -8,6 +8,7 @@ import (
 
 	"github.com/numary/go-libs/sharedapi"
 	"github.com/numary/go-libs/sharedlogging"
+	"github.com/numary/webhooks-cloud/internal/storage"
 	"github.com/numary/webhooks-cloud/pkg/model"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -26,7 +27,7 @@ type Store struct {
 	collection *mongo.Collection
 }
 
-func NewStore() (Store, error) {
+func NewStore() (storage.Store, error) {
 	mongoDBUri := os.Getenv("MONGODB_CONN_STRING")
 	if mongoDBUri == "" {
 		mongoDBUri = defaultMongoDBConnString

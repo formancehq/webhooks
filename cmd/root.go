@@ -10,19 +10,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newRootCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:  "webhooks",
-		RunE: server.Start,
-	}
-}
-
 func Execute() {
 	logger := logrus.New()
 	loggerFactory := sharedlogging.StaticLoggerFactory(sharedlogginglogrus.New(logger))
 	sharedlogging.SetFactory(loggerFactory)
 
-	if err := newRootCmd().Execute(); err != nil {
+	rootCmd := &cobra.Command{
+		Use:  "webhooks",
+		RunE: server.Start,
+	}
+
+	if err := rootCmd.Execute(); err != nil {
 		sharedlogging.Errorf("cobra.Command.Execute: %s", err)
 		os.Exit(1)
 	}

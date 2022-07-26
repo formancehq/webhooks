@@ -11,6 +11,24 @@ vars:
   RUN: "''"
 
 tasks:
+  default:
+    deps: [lint, tests:local:go, tests:benthos]
+
+  lint:
+    cmds:
+      - golangci-lint run -v --fix
+
+  tests:local:go:
+    deps: [mongo]
+    cmds:
+      - >
+        go test {{.TAGS}} -v {{.FAILFAST}} -coverpkg {{.PKG}} -coverprofile coverage.out -covermode atomic
+        -run {{.RUN}} -timeout {{.TIMEOUT}} {{.PKG}} |
+        sed ''/PASS/s//$(printf "\033[32mPASS\033[0m")/'' |
+        sed ''/FAIL/s//$(printf "\033[31mFAIL\033[0m")/'' |
+        sed ''/RUN/s//$(printf "\033[34mRUN\033[0m")/''
+      - task: coverage
+
   tests:
     deps: [tests:benthos, tests:go]
 
@@ -58,7 +76,9 @@ tasks:
 
   install:golangci-lint:
     cmds:
-      - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
+      - >
+        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh |
+        sh -s -- -b $(go env GOPATH)/bin latest
       - golangci-lint --version
 
   install:benthos:
@@ -66,26 +86,17 @@ tasks:
       - curl -Lsf https://sh.benthos.dev | bash
       - benthos --version
 
-  default:
-    deps: [lint, local:tests:go, tests:benthos]
-
-  lint:
+  mongo:
     cmds:
-      - golangci-lint run -v --fix
+      - docker compose up -d mongo
 
-  local:tests:go:
-    deps: [mongo]
+  coverage:
     cmds:
-      - go test -v {{.FAILFAST}} -coverpkg {{.PKG}} -coverprofile coverage.out -covermode atomic -run {{.RUN}} -timeout {{.TIMEOUT}} {{.PKG}} | sed ''/PASS/s//$(printf "\033[32mPASS\033[0m")/'' | sed ''/FAIL/s//$(printf "\033[31mFAIL\033[0m")/'' | sed ''/RUN/s//$(printf "\033[34mRUN\033[0m")/''
       - go tool cover -html=coverage.out -o coverage.html
       - echo "To open the html coverage file, use one of the following commands:"
       - echo "open coverage.html on mac"
       - echo "xdg-open coverage.html on linux"
     silent: true
-
-  mongo:
-    cmds:
-      - docker compose up -d mongo
 
   clean:
     cmds:
