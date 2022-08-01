@@ -10,7 +10,6 @@ import (
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks-cloud/internal/storage"
 	"github.com/numary/webhooks-cloud/pkg/model"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 const (
@@ -39,7 +38,7 @@ func newWebhooksHandler(store storage.Store) http.Handler {
 }
 
 func (h *webhooksHandler) getAllConfigsHandle(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	cursor, err := h.store.FindAllConfigs()
+	cursor, err := h.store.FindAllConfigs(r.Context())
 	if err != nil {
 		sharedlogging.Errorf("mongodb.Store.FindAllConfigs: %s", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -85,8 +84,8 @@ func (h *webhooksHandler) insertConfigHandle(w http.ResponseWriter, r *http.Requ
 	}
 
 	var err error
-	var id primitive.ObjectID
-	if id, err = h.store.InsertOneConfig(config); err != nil {
+	var id string
+	if id, err = h.store.InsertOneConfig(r.Context(), config); err != nil {
 		sharedlogging.Errorf("mongodb.Store.InsertOneConfig: %s", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
@@ -96,7 +95,7 @@ func (h *webhooksHandler) insertConfigHandle(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *webhooksHandler) deleteAllConfigsHandle(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	if err := h.store.DropConfigsCollection(); err != nil {
+	if err := h.store.DropConfigsCollection(r.Context()); err != nil {
 		sharedlogging.Errorf("mongodb.Store.DropConfigsCollection: %s", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return

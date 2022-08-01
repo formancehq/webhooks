@@ -10,6 +10,7 @@ import (
 
 	"github.com/numary/go-libs/sharedapi"
 	"github.com/numary/webhooks-cloud/api/server"
+	"github.com/numary/webhooks-cloud/cmd/constants"
 	"github.com/numary/webhooks-cloud/pkg/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,11 +18,11 @@ import (
 )
 
 func TestAPI(t *testing.T) {
-	c := http.DefaultClient
-	baseURL := fmt.Sprintf("http://localhost%s", server.BindAddr)
-
 	app := fxtest.New(t, server.StartModule())
 	app.RequireStart()
+
+	baseURL := fmt.Sprintf("http://localhost%s", constants.DefaultBindAddress)
+	c := http.DefaultClient
 
 	t.Run("health check", func(t *testing.T) {
 		resp, err := http.Get(baseURL + server.HealthCheckPath)

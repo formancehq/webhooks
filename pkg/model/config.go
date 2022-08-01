@@ -8,13 +8,14 @@ import (
 
 type Config struct {
 	Active     bool     `json:"active" bson:"active"`
-	EventTypes []string `json:"event_types,omitempty" bson:"event_types,omitempty"`
+	EventTypes []string `json:"eventTypes,omitempty" bson:"eventTypes,omitempty"`
 	Endpoints  []string `json:"endpoints,omitempty" bson:"endpoints,omitempty"`
 }
 
 type ConfigInserted struct {
-	Config     `json:",inline" bson:"inline"`
-	InsertedAt time.Time `json:"inserted_at" bson:"inserted_at"`
+	Config     `bson:"inline"`
+	ID         string    `json:"_id" bson:"_id"`
+	InsertedAt time.Time `json:"insertedAt" bson:"insertedAt"`
 }
 
 func (c Config) Validate() error {

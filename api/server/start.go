@@ -8,19 +8,15 @@ import (
 	"syscall"
 
 	"github.com/numary/go-libs/sharedlogging"
+	"github.com/numary/webhooks-cloud/cmd/constants"
 	"github.com/numary/webhooks-cloud/internal/storage/mongodb"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"go.uber.org/fx"
-)
-
-var (
-	Version  = "develop"
-	BindAddr = ":8080"
 )
 
 func Start(*cobra.Command, []string) error {
 	sharedlogging.Infof("env: %+v", syscall.Environ())
-	sharedlogging.Infof("app started with version: %s", Version)
 
 	app := fx.New(StartModule())
 	app.Run()
@@ -29,7 +25,7 @@ func Start(*cobra.Command, []string) error {
 }
 
 func StartModule() fx.Option {
-	return fx.Module("",
+	return fx.Module("webhooks-module",
 		fx.Provide(
 			mongodb.NewStore,
 			newWebhooksHandler,
@@ -40,15 +36,20 @@ func StartModule() fx.Option {
 }
 
 func newMux(lc fx.Lifecycle) *http.ServeMux {
+	bindAddr := viper.GetString(constants.ServerHttpBindAddressFlag)
+	if bindAddr == "" {
+		bindAddr = constants.DefaultBindAddress
+	}
+
 	mux := http.NewServeMux()
 	server := &http.Server{
-		Addr:    BindAddr,
+		Addr:    bindAddr,
 		Handler: mux,
 	}
 
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			sharedlogging.Infof(fmt.Sprintf("starting HTTP server on %s", BindAddr))
+			sharedlogging.Infof(fmt.Sprintf("starting HTTP server on %s", bindAddr))
 			go func() {
 				if err := server.ListenAndServe(); err != nil &&
 					!errors.Is(err, http.ErrServerClosed) {
