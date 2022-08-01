@@ -48,15 +48,9 @@ func (h *webhooksHandler) getAllConfigsHandle(w http.ResponseWriter, r *http.Req
 	resp := sharedapi.BaseResponse[model.ConfigInserted]{
 		Cursor: &cursor,
 	}
-	var data []byte
-	if data, err = json.Marshal(resp); err != nil {
-		sharedlogging.Errorf("json.Marshal: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
 
-	if _, err := w.Write(data); err != nil {
-		sharedlogging.Errorf("http.ResponseWriter.Write: %s", err)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		sharedlogging.Errorf("json.Encoder.Encode: %s", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
