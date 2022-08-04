@@ -36,6 +36,7 @@ tasks:
     cmds:
       - task: mongo
       - task: kafka
+      - docker compose exec -ti redpanda rpk topic create defaultTopic
       - go test -p 1 -coverpkg ./... -coverprofile coverage.out -covermode atomic ./...
 
   ci:
@@ -85,7 +86,7 @@ tasks:
 
   kafka:
     cmds:
-      - docker compose up -d redpanda redpanda-config
+      - docker compose up -d redpanda
 
   coverage:
     cmds:
