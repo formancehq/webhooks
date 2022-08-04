@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/numary/go-libs/sharedapi"
+	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks-cloud/api/server"
 	"github.com/numary/webhooks-cloud/cmd/constants"
 	"github.com/numary/webhooks-cloud/pkg/model"
@@ -18,6 +19,7 @@ import (
 )
 
 func TestAPI(t *testing.T) {
+	sharedlogging.Infof("started TestAPI")
 	app := fxtest.New(t, server.StartModule())
 	app.RequireStart()
 
@@ -47,24 +49,12 @@ func TestAPI(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, baseURL+server.ConfigsPath,
 		buffer(t, model.Config{
 			Active:     true,
-			EventTypes: []string{"TYPE1", "TYPE2"},
+			EventTypes: []string{"COMMITTED_TRANSACTIONS", "SAVED_METADATA"},
 			Endpoints:  []string{"https://www.site1.com", "https://www.site2.com"},
 		}))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.Do(req)
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	req, err = http.NewRequest(http.MethodPost, baseURL+server.ConfigsPath,
-		buffer(t, model.Config{
-			Active:     true,
-			EventTypes: []string{"TYPE3"},
-			Endpoints:  []string{"https://www.site3.com"},
-		}))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err = c.Do(req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -80,27 +70,27 @@ func TestAPI(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
+	req, err = http.NewRequest(http.MethodPost, baseURL+server.ConfigsPath,
+		buffer(t, model.Config{
+			Active:     true,
+			EventTypes: []string{"COMMITTED_TRANSACTIONS"},
+			Endpoints:  []string{"https://www.site3.com"},
+		}))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = c.Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
 	t.Run("get all configs", func(t *testing.T) {
 		resp, err = http.Get(baseURL + server.ConfigsPath)
 		require.NoError(t, err)
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		cur := decodeCursorResponse[model.ConfigInserted](t, resp.Body)
 		assert.Equal(t, 3, len(cur.Data))
-		assert.Equal(t, false, cur.Data[0].Active)
-	})
-
-	t.Run("delete all configs", func(t *testing.T) {
-		req, err := http.NewRequest(http.MethodDelete, baseURL+server.ConfigsPath, nil)
-		require.NoError(t, err)
-		resp, err := c.Do(req)
-		require.NoError(t, err)
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-		resp, err = http.Get(baseURL + server.ConfigsPath)
-		require.NoError(t, err)
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		cur := decodeCursorResponse[model.ConfigInserted](t, resp.Body)
-		assert.Equal(t, 0, len(cur.Data))
+		assert.Equal(t, true, cur.Data[0].Active)
+		assert.Equal(t, 1, len(cur.Data[0].EventTypes))
+		assert.Equal(t, "COMMITTED_TRANSACTIONS", cur.Data[0].EventTypes[0])
 	})
 
 	t.Run("invalid config", func(t *testing.T) {
@@ -127,7 +117,7 @@ func TestAPI(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	})
 
-	t.Run("invalid content type", func(t *testing.T) {
+	t.Run("invalid Content-Type", func(t *testing.T) {
 		req, err := http.NewRequest(http.MethodPost, baseURL+server.ConfigsPath,
 			buffer(t, model.Config{}))
 		require.NoError(t, err)

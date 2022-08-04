@@ -9,7 +9,9 @@ import (
 	"github.com/numary/go-libs/sharedapi"
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks-cloud/internal/storage"
+	"github.com/numary/webhooks-cloud/internal/svix"
 	"github.com/numary/webhooks-cloud/pkg/model"
+	svixgo "github.com/svix/svix-webhooks/go"
 )
 
 const (
@@ -20,13 +22,17 @@ const (
 type webhooksHandler struct {
 	*httprouter.Router
 
-	store storage.Store
+	store      storage.Store
+	svixClient *svixgo.Svix
+	svixAppId  string
 }
 
-func newWebhooksHandler(store storage.Store) http.Handler {
+func newConfigHandler(store storage.Store, svixClient *svixgo.Svix, svixAppId string) http.Handler {
 	h := &webhooksHandler{
-		Router: httprouter.New(),
-		store:  store,
+		Router:     httprouter.New(),
+		store:      store,
+		svixClient: svixClient,
+		svixAppId:  svixAppId,
 	}
 
 	h.Router.GET(HealthCheckPath, h.healthCheckHandle)
@@ -40,7 +46,7 @@ func newWebhooksHandler(store storage.Store) http.Handler {
 func (h *webhooksHandler) getAllConfigsHandle(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	cursor, err := h.store.FindAllConfigs(r.Context())
 	if err != nil {
-		sharedlogging.Errorf("mongodb.Store.FindAllConfigs: %s", err)
+		sharedlogging.Errorf("storage.Store.FindAllConfigs: %s", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
@@ -59,8 +65,8 @@ func (h *webhooksHandler) getAllConfigsHandle(w http.ResponseWriter, r *http.Req
 }
 
 func (h *webhooksHandler) insertConfigHandle(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	config := model.Config{}
-	if err := decodeJSONBody(r, &config); err != nil {
+	cfg := model.Config{}
+	if err := decodeJSONBody(r, &cfg); err != nil {
 		var errIB *errInvalidBody
 		if errors.As(err, &errIB) {
 			http.Error(w, errIB.Error(), errIB.status)
@@ -71,7 +77,7 @@ func (h *webhooksHandler) insertConfigHandle(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := config.Validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		sharedlogging.Errorf("invalid config: %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -79,10 +85,25 @@ func (h *webhooksHandler) insertConfigHandle(w http.ResponseWriter, r *http.Requ
 
 	var err error
 	var id string
-	if id, err = h.store.InsertOneConfig(r.Context(), config); err != nil {
-		sharedlogging.Errorf("mongodb.Store.InsertOneConfig: %s", err)
+	if id, err = h.store.InsertOneConfig(r.Context(), cfg); err != nil {
+		sharedlogging.Errorf("storage.Store.InsertOneConfig: %s", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
+	}
+
+	if err := svix.DeleteAllEndpoints(h.svixClient, h.svixAppId); err != nil {
+		sharedlogging.Errorf("svix.DeleteAllEndpoints: %s", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	for _, endpoint := range cfg.Endpoints {
+		if err := svix.CreateEndpoint(h.svixClient, h.svixAppId, endpoint); err != nil {
+			sharedlogging.Errorf(
+				"svix.CreateEndpoint: %s", err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	sharedlogging.Infof("POST /configs: inserted %s", id)
@@ -90,7 +111,13 @@ func (h *webhooksHandler) insertConfigHandle(w http.ResponseWriter, r *http.Requ
 
 func (h *webhooksHandler) deleteAllConfigsHandle(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	if err := h.store.DropConfigsCollection(r.Context()); err != nil {
-		sharedlogging.Errorf("mongodb.Store.DropConfigsCollection: %s", err)
+		sharedlogging.Errorf("storage.Store.DropConfigsCollection: %s", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	if err := svix.DeleteAllEndpoints(h.svixClient, h.svixAppId); err != nil {
+		sharedlogging.Errorf("svix.DeleteAllEndpoints: %s", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}

@@ -1,4 +1,4 @@
-package mongodb
+package mongo
 
 import (
 	"context"
@@ -25,7 +25,7 @@ type Store struct {
 	collection *mongo.Collection
 }
 
-func NewStore() (storage.Store, error) {
+func NewConfigStore() (storage.Store, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -52,8 +52,8 @@ func NewStore() (storage.Store, error) {
 }
 
 func (s Store) FindAllConfigs(ctx context.Context) (sharedapi.Cursor[model.ConfigInserted], error) {
-	opts := options.Find().SetSort(bson.D{{Key: "insertedAt", Value: -1}})
-	cur, err := s.collection.Find(ctx, bson.D{}, opts)
+	opts := options.Find().SetSort(bson.M{"insertedAt": -1})
+	cur, err := s.collection.Find(ctx, bson.M{}, opts)
 	if err != nil {
 		return sharedapi.Cursor[model.ConfigInserted]{}, fmt.Errorf("mongo.Collection.Find: %w", err)
 	}
@@ -73,11 +73,24 @@ func (s Store) FindAllConfigs(ctx context.Context) (sharedapi.Cursor[model.Confi
 	}, nil
 }
 
+func (s Store) FindLastConfig(ctx context.Context) (*model.ConfigInserted, error) {
+	res := model.ConfigInserted{}
+	opts := options.FindOne().SetSort(bson.M{"insertedAt": -1})
+	if err := s.collection.FindOne(ctx, bson.M{}, opts).Decode(&res); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &res, nil
+}
+
 func (s Store) InsertOneConfig(ctx context.Context, config model.Config) (string, error) {
 	configInserted := model.ConfigInserted{
 		Config:     config,
 		ID:         uuid.New().String(),
-		InsertedAt: time.Now().UnixNano(),
+		InsertedAt: int(time.Now().UnixNano()),
 	}
 
 	res, err := s.collection.InsertOne(ctx, configInserted)

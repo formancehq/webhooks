@@ -1,27 +1,7 @@
 services:
   collector:
     image: otel/opentelemetry-collector
-  benthos:
-    image: jeffail/benthos
-    ports:
-      - "4195:4195/tcp"
-    volumes:
-      - ./.cloud/helm/benthos:/config
-    working_dir: /config
-    command:
-      - -w
-      - -c
-      - config.yml
-      - --log.level
-      - trace
-    environment:
-      HTTP_CLIENT_TLS_SKIP_CERT_VERIFY: "true"
-      HTTP_CLIENT_TLS_ENABLED: "true"
-      BASIC_AUTH_ENABLED: "true"
-      BASIC_AUTH_USERNAME: "admin"
-      BASIC_AUTH_PASSWORD: "admin"
-      JAEGER_COLLECTOR: "collector:6831"
-      INDEX: "ledger"
+
   mongo:
     image: mongo
     ports:
@@ -29,6 +9,27 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: "admin"
       MONGO_INITDB_ROOT_PASSWORD: "admin"
+
+  zookeeper:
+    image: 'bitnami/zookeeper:latest'
+    ports:
+      - '2181:2181'
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+
+  kafka:
+    image: 'bitnami/kafka:latest'
+    ports:
+      - '9092:9092'
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://127.0.0.1:9092
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    depends_on:
+      - zookeeper
+
   webhooks:
     command: reflex -r '\.go' -s -- sh -c "go run ./"
     build:

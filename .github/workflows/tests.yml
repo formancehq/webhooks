@@ -19,8 +19,6 @@ jobs:
           cache: true
       - name: Install task
         uses: arduino/setup-task@v1
-      - name: Install benthos
-        run: task install:benthos
       - name: Run tests
         run: task tests
       - name: Upload coverage to Codecov
