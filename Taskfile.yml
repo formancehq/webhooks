@@ -1,5 +1,10 @@
 version: '3'
 
+env:
+  KAFKA_TOPIC: test-topic
+  SVIX_TOKEN: testsk_CSkhagouqu-JXgZznr35dG2TYTmsCPnb
+  SVIX_APP_ID: app_2CqvO4XINy9ucWhqGPFXj4EkNS7
+
 vars:
   SERVICE: webhooks
   APP_VERSION: develop
@@ -7,7 +12,7 @@ vars:
 
   PKG: "./..."
   FAILFAST: "-failfast"
-  TIMEOUT: "1m"
+  TIMEOUT: "2m"
   RUN: "''"
 
 tasks:
@@ -36,7 +41,6 @@ tasks:
     cmds:
       - task: mongo
       - task: kafka
-      - docker compose exec -ti redpanda rpk topic create defaultTopic
       - go test -p 1 -coverpkg ./... -coverprofile coverage.out -covermode atomic ./...
 
   ci:
@@ -86,7 +90,8 @@ tasks:
 
   kafka:
     cmds:
-      - docker compose up -d redpanda
+      - docker compose up -d redpanda redpanda-ui
+      - docker compose exec -ti redpanda rpk topic create {{.KAFKA_TOPIC}} || exit 0
 
   coverage:
     cmds:

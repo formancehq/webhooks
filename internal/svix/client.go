@@ -10,14 +10,7 @@ import (
 
 func New() (*svix.Svix, string, error) {
 	token := viper.GetString(constants.SvixTokenFlag)
-	if token == "" {
-		token = constants.DefaultSvixToken
-	}
-
 	appId := viper.GetString(constants.SvixAppIdFlag)
-	if appId == "" {
-		appId = constants.DefaultSvixAppId
-	}
 
 	svixClient := svix.New(token, nil)
 	_, err := svixClient.Application.Get(appId)

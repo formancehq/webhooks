@@ -12,13 +12,18 @@ import (
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks-cloud/api/server"
 	"github.com/numary/webhooks-cloud/cmd/constants"
+	"github.com/numary/webhooks-cloud/env"
 	"github.com/numary/webhooks-cloud/pkg/model"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
 )
 
 func TestAPI(t *testing.T) {
+	flagSet := pflag.NewFlagSet("TestAPI", pflag.ContinueOnError)
+	require.NoError(t, env.Flags(flagSet))
+
 	sharedlogging.Infof("started TestAPI")
 	app := fxtest.New(t, server.StartModule())
 	app.RequireStart()

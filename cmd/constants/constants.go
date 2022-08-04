@@ -1,13 +1,10 @@
 package constants
 
 const (
-	StorageMongoConnStringFlag = "storage.mongo.conn_string"
-	ServerHttpBindAddressFlag  = "server.http.bind_address"
+	StorageMongoConnStringFlag = "storage-mongo-conn-string"
+	ServerHttpBindAddressFlag  = "server-http-bind-address"
 
-	DefaultMongoConnString = "mongodb://admin:admin@localhost:27017/"
-	DefaultBindAddress     = ":8080"
-
-	KafkaBrokerFlag                = "kafka-broker"
+	KafkaBrokersFlag               = "kafka-brokers"
 	KafkaGroupIDFlag               = "kafka-consumer-group"
 	KafkaTopicFlag                 = "kafka-topic"
 	KafkaTLSEnabledFlag            = "kafka-tls-enabled"
@@ -17,13 +14,15 @@ const (
 	KafkaUsernameFlag              = "kafka-username"
 	KafkaPasswordFlag              = "kafka-password"
 
-	DefaultKafkaTopic   = "defaultTopic"
+	SvixTokenFlag = "svix-token"
+	SvixAppIdFlag = "svix-app-id"
+)
+
+const (
+	DefaultMongoConnString = "mongodb://admin:admin@localhost:27017/"
+	DefaultBindAddress     = ":8080"
+
+	DefaultKafkaTopic   = "default"
 	DefaultKafkaBroker  = "localhost:9092"
 	DefaultKafkaGroupID = "1"
-
-	SvixTokenFlag = "svix.token"
-	SvixAppIdFlag = "svix.appId"
-
-	DefaultSvixToken = "testsk_CSkhagouqu-JXgZznr35dG2TYTmsCPnb"
-	DefaultSvixAppId = "app_2CqvO4XINy9ucWhqGPFXj4EkNS7"
 )

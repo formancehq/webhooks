@@ -3,15 +3,18 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks-cloud/cmd/constants"
+	"github.com/numary/webhooks-cloud/env"
 	"github.com/numary/webhooks-cloud/internal/storage/mongo"
 	"github.com/numary/webhooks-cloud/internal/svix"
 	"github.com/numary/webhooks-cloud/pkg/model"
 	kafkago "github.com/segmentio/kafka-go"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,6 +43,9 @@ func TestEngine(t *testing.T) {
 	defer cancel()
 	sharedlogging.GetLogger(ctx).Infof("started TestEngine")
 
+	flagSet := pflag.NewFlagSet("TestEngine", pflag.ContinueOnError)
+	require.NoError(t, env.Flags(flagSet))
+
 	store, err := mongo.NewConfigStore()
 	require.NoError(t, err)
 	defer func() {
@@ -48,8 +54,9 @@ func TestEngine(t *testing.T) {
 
 	require.NoError(t, store.DropConfigsCollection(ctx))
 
+	topic := os.Getenv("KAFKA_TOPIC")
 	conn, err := kafkago.DialLeader(context.Background(),
-		"tcp", constants.DefaultKafkaBroker, constants.DefaultKafkaTopic, 0)
+		"tcp", constants.DefaultKafkaBroker, topic, 0)
 	require.NoError(t, err)
 	require.NoError(t, conn.SetWriteDeadline(time.Now().Add(10*time.Second)))
 

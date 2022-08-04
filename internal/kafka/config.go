@@ -36,7 +36,7 @@ func NewKafkaReaderConfig() (kafka.ReaderConfig, error) {
 		dialer.SASLMechanism = mechanism
 	}
 
-	brokers := viper.GetStringSlice(constants.KafkaBrokerFlag)
+	brokers := viper.GetStringSlice(constants.KafkaBrokersFlag)
 	if len(brokers) == 0 {
 		brokers = []string{constants.DefaultKafkaBroker}
 	}
