@@ -24,5 +24,5 @@ const (
 
 	DefaultKafkaTopic   = "default"
 	DefaultKafkaBroker  = "localhost:9092"
-	DefaultKafkaGroupID = "1"
+	DefaultKafkaGroupID = "webhooks"
 )

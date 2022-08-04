@@ -16,4 +16,5 @@ FROM alpine as app
 RUN apk add --no-cache ca-certificates curl
 COPY --from=compiler /app/webhooks-cloud /usr/local/bin/webhooks
 EXPOSE 8080
-CMD ["webhooks"]
+ENTRYPOINT ["webhooks"]
+CMD ["server"]

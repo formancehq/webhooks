@@ -47,7 +47,7 @@ services:
       KAFKA_BROKERS: redpanda:29092
 
   webhooks:
-    command: reflex -r '\.go' -s -- sh -c "go run ./"
+    command: reflex -r '\.go' -s -- sh -c "go run ./ server"
     build:
       target: dev
     healthcheck:
