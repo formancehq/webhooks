@@ -85,7 +85,7 @@ tasks:
 
   kafka:
     cmds:
-      - docker compose up -d kafka
+      - docker compose up -d redpanda redpanda-config
 
   coverage:
     cmds:
