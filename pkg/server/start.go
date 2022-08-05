@@ -26,7 +26,7 @@ func Start(*cobra.Command, []string) error {
 }
 
 func StartModule() fx.Option {
-	return fx.Module("webhooks-module",
+	return fx.Module("webhooks server module",
 		fx.Provide(
 			mongo.NewConfigStore,
 			svix.New,

@@ -9,7 +9,7 @@ import (
 
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks-cloud/cmd/constants"
-	"github.com/numary/webhooks-cloud/env"
+	"github.com/numary/webhooks-cloud/internal/env"
 	"github.com/numary/webhooks-cloud/internal/storage/mongo"
 	"github.com/numary/webhooks-cloud/internal/svix"
 	"github.com/numary/webhooks-cloud/pkg/model"
@@ -44,7 +44,7 @@ func TestEngine(t *testing.T) {
 	sharedlogging.GetLogger(ctx).Infof("started TestEngine")
 
 	flagSet := pflag.NewFlagSet("TestEngine", pflag.ContinueOnError)
-	require.NoError(t, env.Flags(flagSet))
+	require.NoError(t, env.Init(flagSet))
 
 	store, err := mongo.NewConfigStore()
 	require.NoError(t, err)

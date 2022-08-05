@@ -1,23 +1,15 @@
 package env
 
 import (
+	"strings"
+
 	"github.com/davecgh/go-spew/spew"
 	"github.com/numary/webhooks-cloud/cmd/constants"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
-func Flags(flagSet *pflag.FlagSet) error {
-	defineFlags(flagSet)
-	if err := viper.BindPFlags(flagSet); err != nil {
-		return err
-	}
-	BindEnv(viper.GetViper())
-	spew.Dump("FLAGS VIPER ALL SETTINGS", viper.AllSettings())
-	return nil
-}
-
-func defineFlags(flagSet *pflag.FlagSet) {
+func Init(flagSet *pflag.FlagSet) error {
 	flagSet.String(constants.ServerHttpBindAddressFlag, constants.DefaultBindAddress, "API bind address")
 	flagSet.String(constants.StorageMongoConnStringFlag, constants.DefaultMongoConnString, "Mongo connection string")
 
@@ -33,4 +25,18 @@ func defineFlags(flagSet *pflag.FlagSet) {
 
 	flagSet.String(constants.SvixTokenFlag, "", "Svix auth token")
 	flagSet.String(constants.SvixAppIdFlag, "", "Svix app ID")
+
+	if err := viper.BindPFlags(flagSet); err != nil {
+		return err
+	}
+
+	LoadEnv(viper.GetViper())
+
+	spew.Dump("env.Init", viper.AllSettings())
+	return nil
+}
+
+func LoadEnv(v *viper.Viper) {
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
+	v.AutomaticEnv()
 }

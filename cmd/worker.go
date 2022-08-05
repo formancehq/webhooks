@@ -7,7 +7,7 @@ import (
 
 var workerCmd = &cobra.Command{
 	Use:   "worker",
-	Short: "Launch worker",
+	Short: "Start worker",
 	RunE:  worker.Start,
 }
 

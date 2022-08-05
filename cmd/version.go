@@ -15,7 +15,7 @@ var (
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "Get version",
+	Short: fmt.Sprintf("Get %s version", ServiceName),
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("Version: %s \n", Version)
 		fmt.Printf("Date: %s \n", BuildDate)
