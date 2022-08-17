@@ -306,15 +306,6 @@ func TestWorker(t *testing.T) {
 		require.NoError(t, conn.Close())
 	}()
 
-	eventType := "TYPE"
-	endpoint := "https://example.com"
-	cfg := model.Config{
-		Endpoint:   endpoint,
-		Secret:     model.NewSecret(),
-		EventTypes: []string{eventType},
-	}
-	require.NoError(t, cfg.Validate())
-
 	t.Run("clean existing configs", func(t *testing.T) {
 		resp, err := http.Get(serverBaseURL + server.PathConfigs)
 		require.NoError(t, err)
@@ -328,6 +319,15 @@ func TestWorker(t *testing.T) {
 			require.Equal(t, http.StatusOK, resp.StatusCode)
 		}
 	})
+
+	eventType := "TYPE_TO_SEND"
+	endpoint := "https://example.com"
+	cfg := model.Config{
+		Endpoint:   endpoint,
+		Secret:     model.NewSecret(),
+		EventTypes: []string{"OTHER_TYPE", eventType},
+	}
+	require.NoError(t, cfg.Validate())
 
 	var insertedId string
 
@@ -346,6 +346,7 @@ func TestWorker(t *testing.T) {
 	for i := 0; i < n; i++ {
 		messages = append(messages, newEventMessage(t, eventType, i))
 	}
+	messages = append(messages, newEventMessage(t, "TYPE_NOT_TO_SEND", n))
 	nbBytes, err := conn.WriteMessages(messages...)
 	require.NoError(t, err)
 	require.NotEqual(t, 0, nbBytes)

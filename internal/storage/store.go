@@ -13,5 +13,6 @@ type Store interface {
 	DeleteOneConfig(ctx context.Context, id string) (int64, error)
 	UpdateOneConfigActive(ctx context.Context, id string, active bool) (model.ConfigInserted, int64, error)
 	UpdateOneConfigSecret(ctx context.Context, id, secret string) (int64, error)
+	FindEventType(ctx context.Context, eventType string) (bool, error)
 	Close(ctx context.Context) error
 }

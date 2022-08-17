@@ -56,11 +56,11 @@ func (s Store) FindAllConfigs(ctx context.Context) (sharedapi.Cursor[model.Confi
 	if err != nil {
 		return sharedapi.Cursor[model.ConfigInserted]{}, fmt.Errorf("mongo.Collection.Find: %w", err)
 	}
-	defer func(cur *mongo.Cursor, ctx context.Context) {
+	defer func() {
 		if err := cur.Close(ctx); err != nil {
 			sharedlogging.GetLogger(ctx).Errorf("mongo.Cursor.Close: %s", err)
 		}
-	}(cur, ctx)
+	}()
 
 	var results []model.ConfigInserted
 	if err := cur.All(ctx, &results); err != nil {
@@ -128,6 +128,26 @@ func (s Store) UpdateOneConfigSecret(ctx context.Context, id, secret string) (in
 	}
 
 	return resUpdate.ModifiedCount, nil
+}
+
+func (s Store) FindEventType(ctx context.Context, eventType string) (bool, error) {
+	filter := bson.D{{Key: "eventTypes", Value: eventType}}
+	cur, err := s.collection.Find(ctx, filter)
+	if err != nil {
+		return false, fmt.Errorf("mongo.Collection.Find: %w", err)
+	}
+	defer func() {
+		if err := cur.Close(ctx); err != nil {
+			sharedlogging.GetLogger(ctx).Errorf("mongo.Cursor.Close: %s", err)
+		}
+	}()
+
+	var results []model.ConfigInserted
+	if err := cur.All(ctx, &results); err != nil {
+		return false, fmt.Errorf("mongo.Cursor.All: %w", err)
+	}
+
+	return len(results) > 0, nil
 }
 
 func (s Store) Close(ctx context.Context) error {
