@@ -98,7 +98,7 @@ func (s Store) DeleteOneConfig(ctx context.Context, id string) (int64, error) {
 	return res.DeletedCount, nil
 }
 
-func (s Store) UpdateOneConfig(ctx context.Context, id string, active bool) (model.ConfigInserted, int64, error) {
+func (s Store) UpdateOneConfigActive(ctx context.Context, id string, active bool) (model.ConfigInserted, int64, error) {
 	filter := bson.D{{Key: "_id", Value: id}}
 	resFind := s.collection.FindOne(ctx, filter)
 	if err := resFind.Err(); err != nil {
@@ -117,6 +117,17 @@ func (s Store) UpdateOneConfig(ctx context.Context, id string, active bool) (mod
 	}
 
 	return cfg, resUpdate.ModifiedCount, nil
+}
+
+func (s Store) UpdateOneConfigSecret(ctx context.Context, id, secret string) (int64, error) {
+	filter := bson.D{{Key: "_id", Value: id}}
+	update := bson.D{{Key: "$set", Value: bson.D{{Key: "secret", Value: secret}}}}
+	resUpdate, err := s.collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return 0, fmt.Errorf("mongo.Collection.UpdateOne: %w", err)
+	}
+
+	return resUpdate.ModifiedCount, nil
 }
 
 func (s Store) Close(ctx context.Context) error {
