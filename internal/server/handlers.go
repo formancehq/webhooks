@@ -8,9 +8,9 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/numary/go-libs/sharedapi"
 	"github.com/numary/go-libs/sharedlogging"
+	model2 "github.com/numary/webhooks/internal/model"
+	"github.com/numary/webhooks/internal/service"
 	"github.com/numary/webhooks/internal/storage"
-	"github.com/numary/webhooks/pkg/model"
-	"github.com/numary/webhooks/pkg/service"
 	svixgo "github.com/svix/svix-webhooks/go"
 )
 
@@ -63,7 +63,7 @@ func (h *serverHandler) getAllConfigsHandle(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	resp := sharedapi.BaseResponse[model.ConfigInserted]{
+	resp := sharedapi.BaseResponse[model2.ConfigInserted]{
 		Cursor: &cursor,
 	}
 
@@ -77,7 +77,7 @@ func (h *serverHandler) getAllConfigsHandle(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *serverHandler) insertOneConfigHandle(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	cfg := model.Config{}
+	cfg := model2.Config{}
 	if err := decodeJSONBody(r, &cfg, false); err != nil {
 		var errIB *errInvalidBody
 		if errors.As(err, &errIB) {
@@ -148,7 +148,7 @@ func (h *serverHandler) deactivateOneConfigHandle(w http.ResponseWriter, r *http
 }
 
 func (h *serverHandler) rotateOneConfigSecretHandle(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	sec := model.Secret{}
+	sec := model2.Secret{}
 	if err := decodeJSONBody(r, &sec, true); err != nil {
 		var errIB *errInvalidBody
 		if errors.As(err, &errIB) {

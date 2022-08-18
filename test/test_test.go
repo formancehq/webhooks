@@ -17,9 +17,9 @@ import (
 	"github.com/numary/webhooks/constants"
 	"github.com/numary/webhooks/internal/env"
 	"github.com/numary/webhooks/internal/kafka"
-	"github.com/numary/webhooks/pkg/model"
-	"github.com/numary/webhooks/pkg/server"
-	"github.com/numary/webhooks/pkg/worker"
+	"github.com/numary/webhooks/internal/model"
+	"github.com/numary/webhooks/internal/server"
+	"github.com/numary/webhooks/internal/worker"
 	kafkago "github.com/segmentio/kafka-go"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -64,7 +64,10 @@ func TestMain(m *testing.M) {
 
 func TestServer(t *testing.T) {
 	serverApp := fxtest.New(t, server.StartModule(context.Background(), httpClient))
-	serverApp.RequireStart()
+
+	t.Run("start", func(t *testing.T) {
+		serverApp.RequireStart()
+	})
 
 	t.Run("health check", func(t *testing.T) {
 		resp, err := http.Get(serverBaseURL + server.PathHealthCheck)
@@ -278,14 +281,19 @@ func TestServer(t *testing.T) {
 		assert.Equal(t, 0, len(cur.Data))
 	})
 
-	serverApp.RequireStop()
+	t.Run("stop", func(t *testing.T) {
+		serverApp.RequireStop()
+	})
 }
 
 func TestWorker(t *testing.T) {
 	serverApp := fxtest.New(t, server.StartModule(context.Background(), httpClient))
-	serverApp.RequireStart()
 	workerApp := fxtest.New(t, worker.StartModule(context.Background(), httpClient))
-	workerApp.RequireStart()
+
+	t.Run("start", func(t *testing.T) {
+		serverApp.RequireStart()
+		workerApp.RequireStart()
+	})
 
 	require.NoError(t, mongoClient.Database(
 		viper.GetString(constants.StorageMongoDatabaseNameFlag)).
@@ -305,6 +313,12 @@ func TestWorker(t *testing.T) {
 	defer func() {
 		require.NoError(t, conn.Close())
 	}()
+
+	t.Run("health check", func(t *testing.T) {
+		resp, err := http.Get(serverBaseURL + server.PathHealthCheck)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
 
 	t.Run("clean existing configs", func(t *testing.T) {
 		resp, err := http.Get(serverBaseURL + server.PathConfigs)
@@ -377,8 +391,10 @@ func TestWorker(t *testing.T) {
 		viper.GetString(constants.StorageMongoDatabaseNameFlag)).
 		Collection("messages").Drop(context.Background()))
 
-	workerApp.RequireStop()
-	serverApp.RequireStop()
+	t.Run("stop", func(t *testing.T) {
+		workerApp.RequireStop()
+		serverApp.RequireStop()
+	})
 }
 
 func newEventMessage(t *testing.T, eventType string, id int) kafkago.Message {

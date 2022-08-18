@@ -6,25 +6,36 @@ import (
 	"syscall"
 
 	"github.com/numary/go-libs/sharedlogging"
+	"github.com/numary/webhooks/internal/mux"
 	"github.com/numary/webhooks/internal/storage/mongo"
 	"github.com/numary/webhooks/internal/svix"
-	"github.com/numary/webhooks/pkg/mux"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 )
 
-func Start(cmd *cobra.Command, args []string) {
+func Run(cmd *cobra.Command, args []string) error {
 	app := fx.New(StartModule(cmd.Context(), http.DefaultClient))
-	app.Run()
+
+	if err := app.Start(cmd.Context()); err != nil {
+		return err
+	}
+
+	<-app.Done()
+
+	if err := app.Stop(cmd.Context()); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func StartModule(ctx context.Context, httpClient *http.Client) fx.Option {
 	sharedlogging.GetLogger(ctx).Debugf(
-		"webhooks server module started: env variables: %+v viper keys: %+v",
+		"starting webhooks server module: env variables: %+v viper keys: %+v",
 		syscall.Environ(), viper.AllKeys())
 
-	return fx.Module("webhooks server module",
+	return fx.Module("webhooks server",
 		fx.Provide(
 			func() *http.Client { return httpClient },
 			mongo.NewConfigStore,
@@ -32,10 +43,10 @@ func StartModule(ctx context.Context, httpClient *http.Client) fx.Option {
 			newServerHandler,
 			mux.NewServer,
 		),
-		fx.Invoke(register),
+		fx.Invoke(registerHandler),
 	)
 }
 
-func register(mux *http.ServeMux, h http.Handler) {
+func registerHandler(mux *http.ServeMux, h http.Handler) {
 	mux.Handle("/", h)
 }
