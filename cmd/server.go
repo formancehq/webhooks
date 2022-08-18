@@ -7,8 +7,8 @@ import (
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
-	Short: "Launch server",
-	RunE:  server.Start,
+	Short: "Start webhooks server",
+	Run:   server.Start,
 }
 
 func init() {

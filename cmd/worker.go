@@ -7,7 +7,7 @@ import (
 
 var workerCmd = &cobra.Command{
 	Use:   "worker",
-	Short: "Start worker",
+	Short: "Start webhooks worker",
 	Run:   worker.Start,
 }
 

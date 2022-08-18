@@ -14,18 +14,21 @@ import (
 	"github.com/numary/webhooks/pkg/mux"
 	kafkago "github.com/segmentio/kafka-go"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	svixgo "github.com/svix/svix-webhooks/go"
 	"go.uber.org/fx"
 )
 
 func Start(cmd *cobra.Command, args []string) {
-	sharedlogging.Infof("env: %+v", syscall.Environ())
-
 	app := fx.New(StartModule(cmd.Context(), http.DefaultClient))
 	app.Run()
 }
 
 func StartModule(ctx context.Context, httpClient *http.Client) fx.Option {
+	sharedlogging.GetLogger(ctx).Debugf(
+		"webhooks worker module started: env variables: %+v viper keys: %+v",
+		syscall.Environ(), viper.AllKeys())
+
 	return fx.Module("webhooks worker module",
 		fx.Provide(
 			func() context.Context { return ctx },

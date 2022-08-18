@@ -63,7 +63,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestServer(t *testing.T) {
-	serverApp := fxtest.New(t, server.StartModule(httpClient))
+	serverApp := fxtest.New(t, server.StartModule(context.Background(), httpClient))
 	serverApp.RequireStart()
 
 	t.Run("health check", func(t *testing.T) {
@@ -282,7 +282,7 @@ func TestServer(t *testing.T) {
 }
 
 func TestWorker(t *testing.T) {
-	serverApp := fxtest.New(t, server.StartModule(httpClient))
+	serverApp := fxtest.New(t, server.StartModule(context.Background(), httpClient))
 	serverApp.RequireStart()
 	workerApp := fxtest.New(t, worker.StartModule(context.Background(), httpClient))
 	workerApp.RequireStart()

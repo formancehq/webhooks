@@ -26,6 +26,8 @@ type Worker struct {
 	store      storage.Store
 	svixClient *svixgo.Svix
 	svixAppId  string
+
+	stopChan chan chan struct{}
 }
 
 func NewWorker(reader Reader, store storage.Store, svixClient *svixgo.Svix, svixAppId string) *Worker {
@@ -34,12 +36,17 @@ func NewWorker(reader Reader, store storage.Store, svixClient *svixgo.Svix, svix
 		store:      store,
 		svixClient: svixClient,
 		svixAppId:  svixAppId,
+		stopChan:   make(chan chan struct{}),
 	}
 }
 
 func (w *Worker) Run(ctx context.Context) error {
 	for {
 		select {
+		case ch := <-w.stopChan:
+			sharedlogging.GetLogger(ctx).Debug("stopping worker...")
+			close(ch)
+			return nil
 		case <-ctx.Done():
 			sharedlogging.GetLogger(ctx).Debug("worker: context done")
 			return nil
@@ -113,4 +120,10 @@ func (w *Worker) Run(ctx context.Context) error {
 			return err
 		}
 	}
+}
+
+func (w *Worker) Stop(ctx context.Context) {
+	ch := make(chan struct{})
+	w.stopChan <- ch
+	sharedlogging.GetLogger(ctx).Debug("worker stopped")
 }
