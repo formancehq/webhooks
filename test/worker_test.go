@@ -28,7 +28,7 @@ import (
 func TestWorker(t *testing.T) {
 	serverApp := fxtest.New(t,
 		server.StartModule(
-			httpClient, viper.GetString(constants.HttpBindAddressServerFlag)))
+			viper.GetString(constants.HttpBindAddressServerFlag)))
 	workerApp := fxtest.New(t,
 		worker.StartModule(
 			httpClient, viper.GetString(constants.HttpBindAddressWorkerFlag)))
@@ -62,7 +62,6 @@ func TestWorker(t *testing.T) {
 	}
 	require.NoError(t, resBody.Close())
 
-	endpoint := "https://example.com"
 	cfg := model.Config{
 		Endpoint:   endpoint,
 		Secret:     model.NewSecret(),

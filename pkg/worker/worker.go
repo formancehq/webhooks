@@ -5,35 +5,33 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"time"
 
 	"github.com/numary/go-libs/sharedlogging"
-	"github.com/numary/webhooks/pkg/engine"
-	"github.com/numary/webhooks/pkg/engine/svix"
 	"github.com/numary/webhooks/pkg/storage"
 	kafkago "github.com/segmentio/kafka-go"
 )
 
 type Worker struct {
-	Reader Reader
-	Store  storage.Store
-
-	engine engine.Engine
+	Reader     Reader
+	Store      storage.Store
+	httpClient *http.Client
 
 	stopChan chan chan struct{}
 }
 
-func NewWorker(store storage.Store, engine svix.Engine) (*Worker, error) {
+func NewWorker(store storage.Store, httpClient *http.Client) (*Worker, error) {
 	cfg, err := NewKafkaReaderConfig()
 	if err != nil {
 		return nil, fmt.Errorf("NewKafkaReaderConfig: %w", err)
 	}
 
 	return &Worker{
-		Reader:   kafkago.NewReader(cfg),
-		Store:    store,
-		engine:   engine,
-		stopChan: make(chan chan struct{}),
+		Reader:     kafkago.NewReader(cfg),
+		Store:      store,
+		httpClient: httpClient,
+		stopChan:   make(chan chan struct{}),
 	}, nil
 }
 
@@ -67,13 +65,8 @@ func (w *Worker) Run(ctx context.Context) error {
 				"headers":   msg.Headers,
 			}).Debug("worker: new kafka message fetched")
 
-			eventType, err := FilterMessage(msg.Value)
-			if err != nil {
+			if err := w.processMessage(ctx, msg.Value); err != nil {
 				return err
-			}
-
-			if err := w.engine.ProcessKafkaMessage(ctx, eventType, msg.Value); err != nil {
-				return fmt.Errorf("engine.ProcessKafkaMessage: %w", err)
 			}
 
 			if err := w.Reader.CommitMessages(ctx, msg); err != nil {

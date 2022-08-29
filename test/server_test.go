@@ -19,7 +19,7 @@ import (
 func TestServer(t *testing.T) {
 	serverApp := fxtest.New(t,
 		server.StartModule(
-			httpClient, viper.GetString(constants.HttpBindAddressServerFlag)))
+			viper.GetString(constants.HttpBindAddressServerFlag)))
 
 	t.Run("start", func(t *testing.T) {
 		serverApp.RequireStart()

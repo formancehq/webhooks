@@ -20,14 +20,14 @@ import (
 )
 
 type Store struct {
-	uri        string
-	client     *mongo.Client
-	collection *mongo.Collection
+	uri               string
+	client            *mongo.Client
+	configsCollection *mongo.Collection
 }
 
 var _ storage.Store = &Store{}
 
-func NewConfigStore() (storage.Store, error) {
+func NewStore() (storage.Store, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -46,7 +46,7 @@ func NewConfigStore() (storage.Store, error) {
 	return Store{
 		uri:    mongoDBUri,
 		client: client,
-		collection: client.Database(
+		configsCollection: client.Database(
 			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
 			Collection("configs"),
 	}, nil
@@ -54,7 +54,7 @@ func NewConfigStore() (storage.Store, error) {
 
 func (s Store) FindManyConfigs(ctx context.Context, filter map[string]any) (sharedapi.Cursor[model.ConfigInserted], error) {
 	opts := options.Find().SetSort(bson.M{"updatedAt": -1})
-	cur, err := s.collection.Find(ctx, filter, opts)
+	cur, err := s.configsCollection.Find(ctx, filter, opts)
 	if err != nil {
 		return sharedapi.Cursor[model.ConfigInserted]{}, fmt.Errorf("mongo.Collection.Find: %w", err)
 	}
@@ -83,7 +83,7 @@ func (s Store) InsertOneConfig(ctx context.Context, cfg model.Config) (string, e
 		UpdatedAt: time.Now().UTC(),
 	}
 
-	res, err := s.collection.InsertOne(ctx, configInserted)
+	res, err := s.configsCollection.InsertOne(ctx, configInserted)
 	if err != nil {
 		return "", fmt.Errorf("Store.Collection.InsertOne: %w", err)
 	}
@@ -92,7 +92,7 @@ func (s Store) InsertOneConfig(ctx context.Context, cfg model.Config) (string, e
 }
 
 func (s Store) DeleteOneConfig(ctx context.Context, id string) (int64, error) {
-	res, err := s.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+	res, err := s.configsCollection.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
 	if err != nil {
 		return 0, fmt.Errorf("momgo.Collection.DeleteOne: %w", err)
 	}
@@ -102,7 +102,7 @@ func (s Store) DeleteOneConfig(ctx context.Context, id string) (int64, error) {
 
 func (s Store) UpdateOneConfigActivation(ctx context.Context, id string, active bool) (*model.ConfigInserted, int64, error) {
 	filter := bson.D{{Key: "_id", Value: id}}
-	resFind := s.collection.FindOne(ctx, filter)
+	resFind := s.configsCollection.FindOne(ctx, filter)
 	if err := resFind.Err(); err != nil {
 		return nil, 0, fmt.Errorf("mongo.Collection.FindOne: %w", err)
 	}
@@ -113,7 +113,7 @@ func (s Store) UpdateOneConfigActivation(ctx context.Context, id string, active 
 	}
 
 	update := bson.D{{Key: "$set", Value: bson.D{{Key: "active", Value: active}}}}
-	resUpdate, err := s.collection.UpdateOne(ctx, filter, update)
+	resUpdate, err := s.configsCollection.UpdateOne(ctx, filter, update)
 	if err != nil {
 		return nil, 0, fmt.Errorf("mongo.Collection.UpdateOne: %w", err)
 	}
@@ -124,7 +124,7 @@ func (s Store) UpdateOneConfigActivation(ctx context.Context, id string, active 
 func (s Store) UpdateOneConfigSecret(ctx context.Context, id, secret string) (int64, error) {
 	filter := bson.D{{Key: "_id", Value: id}}
 	update := bson.D{{Key: "$set", Value: bson.D{{Key: "secret", Value: secret}}}}
-	resUpdate, err := s.collection.UpdateOne(ctx, filter, update)
+	resUpdate, err := s.configsCollection.UpdateOne(ctx, filter, update)
 	if err != nil {
 		return 0, fmt.Errorf("mongo.Collection.UpdateOne: %w", err)
 	}

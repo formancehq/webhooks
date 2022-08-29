@@ -28,6 +28,7 @@ var (
 	serverBaseURL string
 	workerBaseURL string
 	mongoClient   *mongo.Client
+	endpoint      string
 )
 
 func TestMain(m *testing.M) {
@@ -53,6 +54,8 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
+	endpoint = "https://example.com"
+
 	os.Exit(m.Run())
 }
 
@@ -65,9 +68,9 @@ type message struct {
 	Url string `json:"url" bson:"url"`
 }
 
-// Intercept the message requests to the Svix API and store them in a 'testMessages' Mongo collection.
+// Intercept the message requests to the config endpoint and store them in a 'testMessages' Mongo collection.
 func (i Interceptor) RoundTrip(req *http.Request) (*http.Response, error) {
-	if strings.Contains(req.URL.String(), "/msg/") {
+	if strings.Contains(req.URL.String(), endpoint) && req.Method == http.MethodPost {
 		sharedlogging.Debugf("request intercepted: %s", req.URL.String())
 		_, err := mongoClient.Database(
 			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
