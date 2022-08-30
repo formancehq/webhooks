@@ -6,12 +6,12 @@ import (
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/numary/go-libs/sharedlogging"
-	"github.com/numary/webhooks/pkg/model"
+	webhooks "github.com/numary/webhooks/pkg"
 	"github.com/numary/webhooks/pkg/service"
 )
 
 func (h *serverHandler) rotateSecretHandle(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	sec := model.Secret{}
+	sec := webhooks.Secret{}
 	if err := decodeJSONBody(r, &sec, true); err != nil {
 		var errIB *errInvalidBody
 		if errors.As(err, &errIB) {

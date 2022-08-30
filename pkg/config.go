@@ -1,4 +1,4 @@
-package model
+package webhooks
 
 import (
 	"encoding/base64"
@@ -21,6 +21,14 @@ type ConfigInserted struct {
 	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
 }
+
+const (
+	KeySecret     = "secret"
+	KeyEventTypes = "eventTypes"
+	KeyID         = "_id"
+	KeyActive     = "active"
+	KeyUpdatedAt  = "updatedAt"
+)
 
 var (
 	ErrInvalidEndpoint   = errors.New("endpoint should be a valid url")

@@ -15,7 +15,7 @@ import (
 	payments "github.com/numary/payments/pkg"
 	paymentsEvent "github.com/numary/payments/pkg/bridge/ingestion"
 	"github.com/numary/webhooks/constants"
-	"github.com/numary/webhooks/pkg/model"
+	webhooks "github.com/numary/webhooks/pkg"
 	"github.com/numary/webhooks/pkg/server"
 	"github.com/numary/webhooks/pkg/worker"
 	kafkago "github.com/segmentio/kafka-go"
@@ -31,14 +31,17 @@ func TestWorker(t *testing.T) {
 			viper.GetString(constants.HttpBindAddressServerFlag)))
 	workerApp := fxtest.New(t,
 		worker.StartModule(
-			httpClient, viper.GetString(constants.HttpBindAddressWorkerFlag)))
+			viper.GetString(constants.HttpBindAddressWorkerFlag)))
 
 	require.NoError(t, serverApp.Start(context.Background()))
 	require.NoError(t, workerApp.Start(context.Background()))
 
 	require.NoError(t, mongoClient.Database(
 		viper.GetString(constants.StorageMongoDatabaseNameFlag)).
-		Collection("messages").Drop(context.Background()))
+		Collection(constants.MongoCollectionConfigs).Drop(context.Background()))
+	require.NoError(t, mongoClient.Database(
+		viper.GetString(constants.StorageMongoDatabaseNameFlag)).
+		Collection(constants.MongoCollectionRequests).Drop(context.Background()))
 
 	var err error
 	var conn *kafkago.Conn
@@ -55,22 +58,15 @@ func TestWorker(t *testing.T) {
 		require.NoError(t, conn.Close())
 	}()
 
-	resBody := requestServer(t, http.MethodGet, server.PathConfigs, http.StatusOK)
-	cur := decodeCursorResponse[model.ConfigInserted](t, resBody)
-	for _, cfg := range cur.Data {
-		requestServer(t, http.MethodDelete, server.PathConfigs+"/"+cfg.ID, http.StatusOK)
-	}
-	require.NoError(t, resBody.Close())
-
-	cfg := model.Config{
+	cfg := webhooks.Config{
 		Endpoint:   endpoint,
-		Secret:     model.NewSecret(),
+		Secret:     webhooks.NewSecret(),
 		EventTypes: []string{"OTHER_TYPE", ledgerEvent.EventTypeCommittedTransactions},
 	}
 	require.NoError(t, cfg.Validate())
 
 	var insertedId string
-	resBody = requestServer(t, http.MethodPost, server.PathConfigs, http.StatusOK, cfg)
+	resBody := requestServer(t, http.MethodPost, server.PathConfigs, http.StatusOK, cfg)
 	require.NoError(t, json.NewDecoder(resBody).Decode(&insertedId))
 	require.NoError(t, resBody.Close())
 
@@ -92,9 +88,10 @@ func TestWorker(t *testing.T) {
 		for msgs != n {
 			cur, err := mongoClient.Database(
 				viper.GetString(constants.StorageMongoDatabaseNameFlag)).
-				Collection("testMessages").Find(context.Background(), bson.M{}, nil)
+				Collection(constants.MongoCollectionRequests).
+				Find(context.Background(), bson.M{}, nil)
 			require.NoError(t, err)
-			var results []message
+			var results []webhooks.Request
 			require.NoError(t, cur.All(context.Background(), &results))
 			msgs = len(results)
 			time.Sleep(time.Second)
@@ -102,12 +99,6 @@ func TestWorker(t *testing.T) {
 		time.Sleep(time.Second)
 		require.Equal(t, n, msgs)
 	})
-
-	requestServer(t, http.MethodDelete, server.PathConfigs+"/"+insertedId, http.StatusOK)
-
-	require.NoError(t, mongoClient.Database(
-		viper.GetString(constants.StorageMongoDatabaseNameFlag)).
-		Collection("testMessages").Drop(context.Background()))
 
 	require.NoError(t, serverApp.Stop(context.Background()))
 	require.NoError(t, workerApp.Stop(context.Background()))

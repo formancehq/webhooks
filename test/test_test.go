@@ -8,12 +8,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/numary/go-libs/sharedapi"
-	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks/constants"
 	"github.com/numary/webhooks/pkg/env"
 	"github.com/spf13/pflag"
@@ -37,9 +35,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	httpClient = &http.Client{
-		Transport: Interceptor{http.DefaultTransport},
-	}
+	httpClient = http.DefaultClient
 	serverBaseURL = fmt.Sprintf("http://localhost%s",
 		viper.GetString(constants.HttpBindAddressServerFlag))
 	workerBaseURL = fmt.Sprintf("http://localhost%s",
@@ -57,35 +53,6 @@ func TestMain(m *testing.M) {
 	endpoint = "https://example.com"
 
 	os.Exit(m.Run())
-}
-
-// Interceptor intercepts every http request from httpClient to store webhooks sent.
-type Interceptor struct {
-	core http.RoundTripper
-}
-
-type message struct {
-	Url string `json:"url" bson:"url"`
-}
-
-// Intercept the message requests to the config endpoint and store them in a 'testMessages' Mongo collection.
-func (i Interceptor) RoundTrip(req *http.Request) (*http.Response, error) {
-	if strings.Contains(req.URL.String(), endpoint) && req.Method == http.MethodPost {
-		sharedlogging.Debugf("request intercepted: %s", req.URL.String())
-		_, err := mongoClient.Database(
-			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
-			Collection("testMessages").InsertOne(context.Background(), message{req.URL.String()})
-		if err != nil {
-			return nil, fmt.Errorf("Interceptor.RoundTrip: %w", err)
-		}
-	}
-
-	// send the request using the DefaultTransport
-	httpResponse, err := i.core.RoundTrip(req)
-	if err != nil {
-		return nil, fmt.Errorf("http.RoundTripper.RoundTrip: %w", err)
-	}
-	return httpResponse, nil
 }
 
 func requestServer(t *testing.T, method, url string, expectedCode int, body ...any) io.ReadCloser {

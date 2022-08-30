@@ -10,19 +10,21 @@ import (
 	"github.com/numary/go-libs/sharedapi"
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks/constants"
-	"github.com/numary/webhooks/pkg/model"
+	webhooks "github.com/numary/webhooks/pkg"
 	"github.com/numary/webhooks/pkg/storage"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
 type Store struct {
-	uri               string
-	client            *mongo.Client
-	configsCollection *mongo.Collection
+	uri                string
+	client             *mongo.Client
+	configsCollection  *mongo.Collection
+	requestsCollection *mongo.Collection
 }
 
 var _ storage.Store = &Store{}
@@ -48,15 +50,19 @@ func NewStore() (storage.Store, error) {
 		client: client,
 		configsCollection: client.Database(
 			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
-			Collection("configs"),
+			Collection(constants.MongoCollectionConfigs),
+		requestsCollection: client.Database(
+			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
+			Collection(constants.MongoCollectionRequests),
 	}, nil
 }
 
-func (s Store) FindManyConfigs(ctx context.Context, filter map[string]any) (sharedapi.Cursor[model.ConfigInserted], error) {
-	opts := options.Find().SetSort(bson.M{"updatedAt": -1})
+func (s Store) FindManyConfigs(ctx context.Context, filter map[string]any) (sharedapi.Cursor[webhooks.ConfigInserted], error) {
+	opts := options.Find().SetSort(bson.M{webhooks.KeyUpdatedAt: -1})
 	cur, err := s.configsCollection.Find(ctx, filter, opts)
 	if err != nil {
-		return sharedapi.Cursor[model.ConfigInserted]{}, fmt.Errorf("mongo.Collection.Find: %w", err)
+		return sharedapi.Cursor[webhooks.ConfigInserted]{},
+			fmt.Errorf("mongo.Collection.Find: %w", err)
 	}
 	defer func() {
 		if err := cur.Close(ctx); err != nil {
@@ -64,18 +70,19 @@ func (s Store) FindManyConfigs(ctx context.Context, filter map[string]any) (shar
 		}
 	}()
 
-	var res []model.ConfigInserted
+	var res []webhooks.ConfigInserted
 	if err := cur.All(ctx, &res); err != nil {
-		return sharedapi.Cursor[model.ConfigInserted]{}, fmt.Errorf("mongo.Cursor.All: %w", err)
+		return sharedapi.Cursor[webhooks.ConfigInserted]{},
+			fmt.Errorf("mongo.Cursor.All: %w", err)
 	}
 
-	return sharedapi.Cursor[model.ConfigInserted]{
+	return sharedapi.Cursor[webhooks.ConfigInserted]{
 		Data: res,
 	}, nil
 }
 
-func (s Store) InsertOneConfig(ctx context.Context, cfg model.Config) (string, error) {
-	configInserted := model.ConfigInserted{
+func (s Store) InsertOneConfig(ctx context.Context, cfg webhooks.Config) (string, error) {
+	configInserted := webhooks.ConfigInserted{
 		Config:    cfg,
 		ID:        uuid.NewString(),
 		Active:    true,
@@ -92,7 +99,9 @@ func (s Store) InsertOneConfig(ctx context.Context, cfg model.Config) (string, e
 }
 
 func (s Store) DeleteOneConfig(ctx context.Context, id string) (int64, error) {
-	res, err := s.configsCollection.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+	res, err := s.configsCollection.DeleteOne(ctx, bson.D{
+		{Key: webhooks.KeyID, Value: id},
+	})
 	if err != nil {
 		return 0, fmt.Errorf("momgo.Collection.DeleteOne: %w", err)
 	}
@@ -100,19 +109,26 @@ func (s Store) DeleteOneConfig(ctx context.Context, id string) (int64, error) {
 	return res.DeletedCount, nil
 }
 
-func (s Store) UpdateOneConfigActivation(ctx context.Context, id string, active bool) (*model.ConfigInserted, int64, error) {
-	filter := bson.D{{Key: "_id", Value: id}}
+func (s Store) UpdateOneConfigActivation(ctx context.Context, id string, active bool) (*webhooks.ConfigInserted, int64, error) {
+	filter := bson.D{{Key: webhooks.KeyID, Value: id}}
 	resFind := s.configsCollection.FindOne(ctx, filter)
 	if err := resFind.Err(); err != nil {
 		return nil, 0, fmt.Errorf("mongo.Collection.FindOne: %w", err)
 	}
 
-	var cfg model.ConfigInserted
+	var cfg webhooks.ConfigInserted
 	if err := resFind.Decode(&cfg); err != nil {
 		return nil, 0, fmt.Errorf("mongo.SingleResult.Decode: %w", err)
 	}
 
-	update := bson.D{{Key: "$set", Value: bson.D{{Key: "active", Value: active}}}}
+	if cfg.Active == active {
+		return &cfg, 0, nil
+	}
+
+	update := bson.D{{Key: "$set", Value: bson.D{
+		{Key: webhooks.KeyActive, Value: active},
+		{Key: webhooks.KeyUpdatedAt, Value: time.Now().UTC()},
+	}}}
 	resUpdate, err := s.configsCollection.UpdateOne(ctx, filter, update)
 	if err != nil {
 		return nil, 0, fmt.Errorf("mongo.Collection.UpdateOne: %w", err)
@@ -122,14 +138,26 @@ func (s Store) UpdateOneConfigActivation(ctx context.Context, id string, active 
 }
 
 func (s Store) UpdateOneConfigSecret(ctx context.Context, id, secret string) (int64, error) {
-	filter := bson.D{{Key: "_id", Value: id}}
-	update := bson.D{{Key: "$set", Value: bson.D{{Key: "secret", Value: secret}}}}
+	filter := bson.D{{Key: webhooks.KeyID, Value: id}}
+	update := bson.D{{Key: "$set", Value: bson.D{
+		{Key: webhooks.KeySecret, Value: secret},
+		{Key: webhooks.KeyUpdatedAt, Value: time.Now().UTC()},
+	}}}
 	resUpdate, err := s.configsCollection.UpdateOne(ctx, filter, update)
 	if err != nil {
 		return 0, fmt.Errorf("mongo.Collection.UpdateOne: %w", err)
 	}
 
 	return resUpdate.ModifiedCount, nil
+}
+
+func (s Store) InsertOneRequest(ctx context.Context, req webhooks.Request) (primitive.ObjectID, error) {
+	res, err := s.requestsCollection.InsertOne(ctx, req)
+	if err != nil {
+		return primitive.ObjectID{}, fmt.Errorf("Store.Collection.InsertOne: %w", err)
+	}
+
+	return res.InsertedID.(primitive.ObjectID), nil
 }
 
 func (s Store) Close(ctx context.Context) error {

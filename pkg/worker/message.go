@@ -10,24 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
+	"github.com/google/uuid"
 	"github.com/iancoleman/strcase"
 	ledger "github.com/numary/ledger/pkg/bus"
 	payments "github.com/numary/payments/pkg"
 	paymentIngestion "github.com/numary/payments/pkg/bridge/ingestion"
-)
-
-type EventMessage struct {
-	Date    time.Time       `json:"date"`
-	App     string          `json:"app"`
-	Version string          `json:"version"`
-	Type    string          `json:"type"`
-	Payload json.RawMessage `json:"payload"`
-}
-
-var (
-	ErrUnknownEventType = errors.New("unknown event type")
-	ErrSendWebhook      = errors.New("failed to send webhook")
+	webhooks "github.com/numary/webhooks/pkg"
 )
 
 const (
@@ -35,8 +23,10 @@ const (
 	PrefixPayments = "payments"
 )
 
+var ErrUnknownEventType = errors.New("unknown event type")
+
 func (w *Worker) processMessage(ctx context.Context, msgValue []byte) error {
-	var ev EventMessage
+	var ev webhooks.EventMessage
 	if err := json.Unmarshal(msgValue, &ev); err != nil {
 		return fmt.Errorf("json.Unmarshal event message: %w", err)
 	}
@@ -82,25 +72,35 @@ func (w *Worker) processMessage(ctx context.Context, msgValue []byte) error {
 		return fmt.Errorf("%w: %s", ErrUnknownEventType, ev.Type)
 	}
 
-	cur, err := w.Store.FindManyConfigs(ctx, map[string]any{"eventTypes": ev.Type})
+	cur, err := w.Store.FindManyConfigs(ctx, map[string]any{webhooks.KeyEventTypes: ev.Type})
 	if err != nil {
 		return fmt.Errorf("storage.Store.FindManyConfigs: %w", err)
 	}
 
 	for _, cfg := range cur.Data {
-		buf := bytes.NewBuffer(msgValue)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.Endpoint, buf)
+		id := uuid.NewString()
+		req, err := http.NewRequestWithContext(ctx,
+			http.MethodPost, cfg.Endpoint, bytes.NewBuffer(msgValue))
 		if err != nil {
-			return fmt.Errorf(":%w", err)
+			return fmt.Errorf("http.NewRequestWithContext: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
-		resp, err := w.httpClient.Do(req)
-		if err != nil {
-			return fmt.Errorf("http.Client.Do: %w", err)
+		req.Header.Set("Webhooks-ID", id)
+
+		date := time.Now().UTC()
+		resp, err := http.DefaultClient.Do(req)
+		request := webhooks.Request{
+			Config:     cfg,
+			Payload:    string(msgValue),
+			StatusCode: resp.StatusCode,
+			Attempt:    0,
+			Date:       date,
+			Error:      err.Error(),
 		}
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("%w: %s", ErrSendWebhook, spew.Sdump(resp))
+		if _, err := w.Store.InsertOneRequest(ctx, request); err != nil {
+			return fmt.Errorf("storage.Store.InsertOneRequest: %w", err)
 		}
+
 		if err := resp.Body.Close(); err != nil {
 			return fmt.Errorf("http.Response.Body.Close: %w", err)
 		}

@@ -25,6 +25,9 @@ const (
 	DefaultMongoConnString   = "mongodb://admin:admin@localhost:27017/"
 	DefaultMongoDatabaseName = "webhooks"
 
+	MongoCollectionConfigs  = "configs"
+	MongoCollectionRequests = "requests"
+
 	DefaultKafkaTopic   = "default"
 	DefaultKafkaBroker  = "localhost:9092"
 	DefaultKafkaGroupID = "webhooks"

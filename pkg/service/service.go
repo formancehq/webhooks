@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/numary/go-libs/sharedlogging"
-	"github.com/numary/webhooks/pkg/model"
+	webhooks "github.com/numary/webhooks/pkg"
 	"github.com/numary/webhooks/pkg/storage"
 )
 
@@ -15,7 +15,7 @@ var (
 	ErrConfigNotModified = errors.New("config not modified")
 )
 
-func InsertOneConfig(ctx context.Context, cfg model.Config, store storage.Store) (string, error) {
+func InsertOneConfig(ctx context.Context, cfg webhooks.Config, store storage.Store) (string, error) {
 	var id string
 	var err error
 	if id, err = store.InsertOneConfig(ctx, cfg); err != nil {

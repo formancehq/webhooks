@@ -1,4 +1,4 @@
-package model
+package webhooks
 
 import (
 	"encoding/base64"

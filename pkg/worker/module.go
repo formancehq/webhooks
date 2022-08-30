@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks/pkg/httpserver"
@@ -11,10 +10,10 @@ import (
 	"go.uber.org/fx"
 )
 
-func StartModule(httpClient *http.Client, addr string) fx.Option {
+func StartModule(addr string) fx.Option {
 	return fx.Module("webhooks worker",
 		fx.Provide(
-			func() (*http.Client, string) { return httpClient, addr },
+			func() string { return addr },
 			httpserver.NewMuxServer,
 			mongo.NewStore,
 			NewWorker,
