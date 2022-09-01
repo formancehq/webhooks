@@ -26,7 +26,6 @@ var (
 	serverBaseURL string
 	workerBaseURL string
 	mongoClient   *mongo.Client
-	endpoint      string
 )
 
 func TestMain(m *testing.M) {
@@ -49,8 +48,6 @@ func TestMain(m *testing.M) {
 	if mongoClient, err = mongo.Connect(ctx, options.Client().ApplyURI(mongoDBUri)); err != nil {
 		panic(err)
 	}
-
-	endpoint = "https://example.com"
 
 	os.Exit(m.Run())
 }

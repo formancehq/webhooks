@@ -6,16 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/iancoleman/strcase"
-	ledger "github.com/numary/ledger/pkg/bus"
-	payments "github.com/numary/payments/pkg"
-	paymentIngestion "github.com/numary/payments/pkg/bridge/ingestion"
 	webhooks "github.com/numary/webhooks/pkg"
+	"github.com/numary/webhooks/pkg/security"
 )
 
 const (
@@ -23,9 +22,18 @@ const (
 	PrefixPayments = "payments"
 )
 
+const (
+	EventTypeLedgerCommittedTransactions = "COMMITTED_TRANSACTIONS"
+	EventTypeLedgerSavedMetadata         = "SAVED_METADATA"
+	EventTypeLedgerUpdatedMapping        = "UPDATED_MAPPING"
+	EventTypeLedgerRevertedTransaction   = "REVERTED_TRANSACTION"
+	EventTypePaymentsSavedPayment        = "SAVED_PAYMENT"
+)
+
 var ErrUnknownEventType = errors.New("unknown event type")
 
 func (w *Worker) processMessage(ctx context.Context, msgValue []byte) error {
+	fmt.Printf("MSG:%s\n", string(msgValue))
 	var ev webhooks.EventMessage
 	if err := json.Unmarshal(msgValue, &ev); err != nil {
 		return fmt.Errorf("json.Unmarshal event message: %w", err)
@@ -33,41 +41,21 @@ func (w *Worker) processMessage(ctx context.Context, msgValue []byte) error {
 	eventType := strcase.ToSnake(ev.Type)
 
 	switch ev.Type {
-	case ledger.EventTypeCommittedTransactions:
-		committedTxs := new(ledger.CommittedTransactions)
-		if err := json.Unmarshal(ev.Payload, committedTxs); err != nil {
-			return fmt.Errorf("json.Unmarshal event message payload: %w", err)
-		}
+	case EventTypeLedgerCommittedTransactions:
 		eventType = strings.Join([]string{PrefixLedger, eventType}, ".")
-		fmt.Printf("\nEVENT FETCHED: %s\n%+v\n", eventType, committedTxs)
-	case ledger.EventTypeSavedMetadata:
-		metadata := new(ledger.SavedMetadata)
-		if err := json.Unmarshal(ev.Payload, metadata); err != nil {
-			return fmt.Errorf("json.Unmarshal event message payload: %w", err)
-		}
+		fmt.Printf("\nEVENT FETCHED: %s\n", eventType)
+	case EventTypeLedgerSavedMetadata:
 		eventType = strings.Join([]string{PrefixLedger, eventType}, ".")
-		fmt.Printf("\nEVENT FETCHED: %s\n%+v\n", eventType, metadata)
-	case ledger.EventTypeUpdatedMapping:
-		mapping := new(ledger.UpdatedMapping)
-		if err := json.Unmarshal(ev.Payload, mapping); err != nil {
-			return fmt.Errorf("json.Unmarshal event message payload: %w", err)
-		}
+		fmt.Printf("\nEVENT FETCHED: %s\n", eventType)
+	case EventTypeLedgerUpdatedMapping:
 		eventType = strings.Join([]string{PrefixLedger, eventType}, ".")
-		fmt.Printf("\nEVENT FETCHED: %s\n%+v\n", eventType, mapping)
-	case ledger.EventTypeRevertedTransaction:
-		revertedTx := new(ledger.RevertedTransaction)
-		if err := json.Unmarshal(ev.Payload, revertedTx); err != nil {
-			return fmt.Errorf("json.Unmarshal event message payload: %w", err)
-		}
+		fmt.Printf("\nEVENT FETCHED: %s\n", eventType)
+	case EventTypeLedgerRevertedTransaction:
 		eventType = strings.Join([]string{PrefixLedger, eventType}, ".")
-		fmt.Printf("\nEVENT FETCHED: %s\n%+v\n", eventType, revertedTx)
-	case paymentIngestion.EventTypeSavedPayment:
-		savedPayment := new(payments.SavedPayment)
-		if err := json.Unmarshal(ev.Payload, savedPayment); err != nil {
-			return fmt.Errorf("json.Unmarshal event message payload: %w", err)
-		}
+		fmt.Printf("\nEVENT FETCHED: %s\n", eventType)
+	case EventTypePaymentsSavedPayment:
 		eventType = strings.Join([]string{PrefixPayments, eventType}, ".")
-		fmt.Printf("\nEVENT FETCHED: %s\n%+v\n", eventType, savedPayment)
+		fmt.Printf("\nEVENT FETCHED: %s\n", eventType)
 	default:
 		return fmt.Errorf("%w: %s", ErrUnknownEventType, ev.Type)
 	}
@@ -84,19 +72,34 @@ func (w *Worker) processMessage(ctx context.Context, msgValue []byte) error {
 		if err != nil {
 			return fmt.Errorf("http.NewRequestWithContext: %w", err)
 		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Webhooks-ID", id)
 
 		date := time.Now().UTC()
-		resp, err := http.DefaultClient.Do(req)
+		signature, err := security.Sign(id, date, []byte(cfg.Secret), msgValue)
+		if err != nil {
+			return fmt.Errorf("security.Sign: %w", err)
+		}
+
+		req.Header.Set("content-type", "application/json")
+		req.Header.Set("user-agent", "formance-webhooks/v0")
+		req.Header.Set("formance-webhook-id", id)
+		req.Header.Set("formance-webhook-timestamp", fmt.Sprintf("%d", date.Unix()))
+		req.Header.Set("formance-webhook-signature", signature)
+		fmt.Printf("HEADERS: %+v\n", req.Header)
+
+		resp, err := w.httpClient.Do(req)
 		request := webhooks.Request{
 			Config:     cfg,
 			Payload:    string(msgValue),
 			StatusCode: resp.StatusCode,
 			Attempt:    0,
 			Date:       date,
-			Error:      err.Error(),
 		}
+		if err != nil {
+			request.Error = err.Error()
+		}
+
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Printf("RESP SERVER: %s\n", body)
 		if _, err := w.Store.InsertOneRequest(ctx, request); err != nil {
 			return fmt.Errorf("storage.Store.InsertOneRequest: %w", err)
 		}

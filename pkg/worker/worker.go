@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"time"
 
 	"github.com/numary/go-libs/sharedlogging"
@@ -16,19 +17,22 @@ type Worker struct {
 	Reader Reader
 	Store  storage.Store
 
+	httpClient *http.Client
+
 	stopChan chan chan struct{}
 }
 
-func NewWorker(store storage.Store) (*Worker, error) {
+func NewWorker(store storage.Store, httpClient *http.Client) (*Worker, error) {
 	cfg, err := NewKafkaReaderConfig()
 	if err != nil {
 		return nil, fmt.Errorf("NewKafkaReaderConfig: %w", err)
 	}
 
 	return &Worker{
-		Reader:   kafkago.NewReader(cfg),
-		Store:    store,
-		stopChan: make(chan chan struct{}),
+		Reader:     kafkago.NewReader(cfg),
+		Store:      store,
+		httpClient: httpClient,
+		stopChan:   make(chan chan struct{}),
 	}, nil
 }
 

@@ -1,10 +1,12 @@
 [
   {
-    "date": "2022-06-30T08:59:23.295278218Z",
-    "ledger": "dott-557ce57d",
+    "date": "2022-06-30T08:59:23Z",
+    "type": "COMMITTED_TRANSACTIONS",
+    "ledger": "test-gr3454557d",
     "payload": {
+      "ledger": "test-gr3454557d",
       "postCommitVolumes": {
-        "dott": {
+        "test": {
           "EUR/2": {
             "balance": 22766,
             "input": 22766,
@@ -20,7 +22,7 @@
         }
       },
       "preCommitVolumes": {
-        "dott": {
+        "test": {
           "EUR/2": {
             "balance": 21930,
             "input": 21930,
@@ -39,7 +41,7 @@
         {
           "metadata": {},
           "postCommitVolumes": {
-            "dott": {
+            "test": {
               "EUR/2": {
                 "balance": 22766,
                 "input": 22766,
@@ -64,12 +66,12 @@
             {
               "amount": 836,
               "asset": "EUR/2",
-              "destination": "dott",
+              "destination": "test",
               "source": "rides:zv4l8rs6l50sp7e8"
             }
           ],
           "preCommitVolumes": {
-            "dott": {
+            "test": {
               "EUR/2": {
                 "balance": 21930,
                 "input": 21930,
@@ -90,7 +92,7 @@
         }
       ],
       "volumes": {
-        "dott": {
+        "test": {
           "EUR/2": {
             "balance": 22766,
             "input": 22766,
@@ -105,13 +107,14 @@
           }
         }
       }
-    },
-    "type": "COMMITTED_TRANSACTIONS"
+    }
   },
   {
-    "date": "2022-06-30T08:59:23.600079012Z",
-    "ledger": "dott-557ce57d",
+    "date": "2022-06-30T08:59:23Z",
+    "type": "SAVED_METADATA",
+    "ledger": "test-557ce57d",
     "payload": {
+      "ledger": "test-5344vfeg57d",
       "metadata": {
         "date": "2022-06-30T08:59:23.232Z",
         "minutes": 32,
@@ -119,11 +122,11 @@
       },
       "targetId": "49",
       "targetType": "TRANSACTION"
-    },
-    "type": "SAVED_METADATA"
+    }
   },
   {
-    "date":"2022-07-06T21:16:35.92770476Z",
+    "date":"2022-07-06T21:16:35Z",
+    "type":"SAVED_PAYMENT",
     "payload":{
       "adjustments":[
         {
@@ -144,7 +147,7 @@
             "feedetails":[
 
             ],
-            "id":"txn_1LIfYqFqW03ZYiNnZxQBtlqO",
+            "id":"txn_1LIfYtlqO",
             "net":-18750,
             "object":"balance_transaction",
             "reportingcategory":"transfer",
@@ -154,7 +157,7 @@
               "connectcollectiontransfer":null,
               "dispute":null,
               "feerefund":null,
-              "id":"tr_1LIfYqFqW03ZYiNncguRMbhm",
+              "id":"tr_1LIfYqFqWMbhm",
               "issuingauthorization":null,
               "issuingdispute":null,
               "issuingtransaction":null,
@@ -180,7 +183,7 @@
                   "exchangerate":0,
                   "fee":0,
                   "feedetails":null,
-                  "id":"txn_1LIfYqFqW03ZYiNnZxQBtlqO",
+                  "id":"txn_1LIfYQBtlqO",
                   "net":0,
                   "object":"",
                   "reportingcategory":"",
@@ -193,7 +196,7 @@
                 "description":"paiement produit #224Y2AG9",
                 "destination":{
                   "account":null,
-                  "id":"acct_1LIZgL2Ei4QFVvrY"
+                  "id":"acct_1LIZgLVvrY"
                 },
                 "destinationpayment":{
                   "amount":0,
@@ -221,7 +224,7 @@
                   "failurecode":"",
                   "failuremessage":"",
                   "frauddetails":null,
-                  "id":"py_1LIfYq2Ei4QFVvrYlv34VH1m",
+                  "id":"py_1LIfYVH1m",
                   "invoice":null,
                   "level3":{
                     "customerreference":"",
@@ -257,11 +260,11 @@
                   "transferdata":null,
                   "transfergroup":""
                 },
-                "id":"tr_1LIfYqFqW03ZYiNncguRMbhm",
+                "id":"tr_1LncguRMbhm",
                 "livemode":true,
                 "metadata":{
-                  "cashoutPayment":"62c59157110c00814d8b4568",
-                  "orderProduct":"62aa0ab93da8eee6468b4748"
+                  "cashoutPayment":"62c5d8b4568",
+                  "orderProduct":"62aa0aee6468b4748"
                 },
                 "object":"transfer",
                 "reversals":{
@@ -274,13 +277,13 @@
                   "listmeta":{
                     "hasmore":false,
                     "totalcount":0,
-                    "url":"/v1/transfers/tr_1LIfYqFqW03ZYiNncguRMbhm/reversals"
+                    "url":"/v1/tr_1Lbhm/reversals"
                   }
                 },
                 "reversed":false,
                 "sourcetransaction":null,
                 "sourcetype":"card",
-                "transfergroup":"order_UjG1nz6"
+                "transfergroup":"order_Uj6"
               },
               "type":"transfer"
             },
@@ -293,7 +296,7 @@
       "amount":18750,
       "asset":"EUR/2",
       "createdAt":"2022-07-06T21:15:04Z",
-      "id":"eyJwcm92aWRlciI6InN0cmlwZSIsInJlZmVyZW5jZSI6InRyXzFMSWZZcUZxVzAzWllpTm5jZ3VSTWJobSIsInR5cGUiOiJwYXlvdXQifQ==",
+      "id":"eyJwcm9lpTm5jZ3VXQifQ==",
       "initialAmount":18750,
       "provider":"stripe",
       "raw":{
@@ -304,13 +307,13 @@
         "availableon":1657142104,
         "created":1657142104,
         "currency":"eur",
-        "description":"paiement produit #224Y2AG9",
+        "description":"paiement produit #229",
         "exchangerate":0,
         "fee":0,
         "feedetails":[
 
         ],
-        "id":"txn_1LIfYqFqW03ZYiNnZxQBtlqO",
+        "id":"txn_qO",
         "net":-18750,
         "object":"balance_transaction",
         "reportingcategory":"transfer",
@@ -320,7 +323,7 @@
           "connectcollectiontransfer":null,
           "dispute":null,
           "feerefund":null,
-          "id":"tr_1LIfYqFqW03ZYiNncguRMbhm",
+          "id":"tr_1LIfYqMbhm",
           "issuingauthorization":null,
           "issuingdispute":null,
           "issuingtransaction":null,
@@ -346,7 +349,7 @@
               "exchangerate":0,
               "fee":0,
               "feedetails":null,
-              "id":"txn_1LIfYqFqW03ZYiNnZxQBtlqO",
+              "id":"txn_1LNnZxQBtlqO",
               "net":0,
               "object":"",
               "reportingcategory":"",
@@ -359,7 +362,7 @@
             "description":"paiement produit #224Y2AG9",
             "destination":{
               "account":null,
-              "id":"acct_1LIZgL2Ei4QFVvrY"
+              "id":"acct_1LFVvrY"
             },
             "destinationpayment":{
               "amount":0,
@@ -387,7 +390,7 @@
               "failurecode":"",
               "failuremessage":"",
               "frauddetails":null,
-              "id":"py_1LIfYq2Ei4QFVvrYlv34VH1m",
+              "id":"py_1LIfVH1m",
               "invoice":null,
               "level3":{
                 "customerreference":"",
@@ -423,11 +426,11 @@
               "transferdata":null,
               "transfergroup":""
             },
-            "id":"tr_1LIfYqFqW03ZYiNncguRMbhm",
+            "id":"tr_1LIfRMbhm",
             "livemode":true,
             "metadata":{
-              "cashoutPayment":"62c59157110c00814d8b4568",
-              "orderProduct":"62aa0ab93da8eee6468b4748"
+              "cashoutPayment":"62c591574568",
+              "orderProduct":"62aaa8ee468b4748"
             },
             "object":"transfer",
             "reversals":{
@@ -440,7 +443,7 @@
               "listmeta":{
                 "hasmore":false,
                 "totalcount":0,
-                "url":"/v1/transfers/tr_1LIfYqFqW03ZYiNncguRMbhm/reversals"
+                "url":"/v1/transfers/tr_1LIfYhm/reversals"
               }
             },
             "reversed":false,
@@ -453,11 +456,10 @@
         "status":"available",
         "type":"transfer"
       },
-      "reference":"tr_1LIfYqFqW03ZYiNncguRMbhm",
+      "reference":"tr_1Lbhm",
       "scheme":"other",
       "status":"succeeded",
       "type":"payout"
-    },
-    "type":"SAVED_PAYMENT"
+    }
   }
 ]

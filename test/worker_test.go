@@ -3,19 +3,20 @@ package test_test
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"io/ioutil"
 	"net/http"
+	"net/http/httptest"
+	"os"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/numary/go-libs/sharedlogging"
-	ledgerEvent "github.com/numary/ledger/pkg/bus"
-	ledger "github.com/numary/ledger/pkg/core"
-	payments "github.com/numary/payments/pkg"
-	paymentsEvent "github.com/numary/payments/pkg/bridge/ingestion"
 	"github.com/numary/webhooks/constants"
 	webhooks "github.com/numary/webhooks/pkg"
+	"github.com/numary/webhooks/pkg/security"
 	"github.com/numary/webhooks/pkg/server"
 	"github.com/numary/webhooks/pkg/worker"
 	kafkago "github.com/segmentio/kafka-go"
@@ -26,12 +27,46 @@ import (
 )
 
 func TestWorker(t *testing.T) {
+	secret := webhooks.NewSecret()
+	httpHandler := http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			id := r.Header.Get("formance-webhook-id")
+			ts := r.Header.Get("formance-webhook-timestamp")
+			signatures := r.Header.Get("formance-webhook-signature")
+			timeInt, err := strconv.ParseInt(ts, 10, 64)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			timestamp := time.Unix(timeInt, 0)
+
+			payload, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			ok, err := security.Verify(signatures, id, timestamp, []byte(secret), payload)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if !ok {
+				http.Error(w, "", http.StatusBadRequest)
+				return
+			}
+			return
+		})
+
+	httptestServer := httptest.NewServer(httpHandler)
+	defer httptestServer.Close()
+
 	serverApp := fxtest.New(t,
 		server.StartModule(
 			viper.GetString(constants.HttpBindAddressServerFlag)))
 	workerApp := fxtest.New(t,
 		worker.StartModule(
-			viper.GetString(constants.HttpBindAddressWorkerFlag)))
+			viper.GetString(constants.HttpBindAddressWorkerFlag), httptestServer.Client()))
 
 	require.NoError(t, serverApp.Start(context.Background()))
 	require.NoError(t, workerApp.Start(context.Background()))
@@ -59,9 +94,9 @@ func TestWorker(t *testing.T) {
 	}()
 
 	cfg := webhooks.Config{
-		Endpoint:   endpoint,
-		Secret:     webhooks.NewSecret(),
-		EventTypes: []string{"OTHER_TYPE", ledgerEvent.EventTypeCommittedTransactions},
+		Endpoint:   httptestServer.URL,
+		Secret:     secret,
+		EventTypes: []string{"OTHER_TYPE", worker.EventTypeLedgerCommittedTransactions},
 	}
 	require.NoError(t, cfg.Validate())
 
@@ -70,10 +105,33 @@ func TestWorker(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resBody).Decode(&insertedId))
 	require.NoError(t, resBody.Close())
 
+	f, err := os.Open("../kafka-messages-examples.json")
+	require.NoError(t, err)
+	byteValue, _ := ioutil.ReadAll(f)
+	var s any
+	require.NoError(t, json.Unmarshal(byteValue, &s))
+	spew.Dump(s)
+
+	type s1 struct {
+		Type    string `json:"type"`
+		Payload any    `json:"payload"`
+	}
+	type s2 struct {
+		ID int `json:"id"`
+	}
+
 	n := 3
 	var messages []kafkago.Message
 	for i := 0; i < n; i++ {
-		messages = append(messages, newMessageLedgerCommittedTransactions(t, strconv.Itoa(i)))
+		ss := s1{
+			Type:    worker.EventTypeLedgerCommittedTransactions,
+			Payload: s2{ID: i},
+		}
+		by, err := json.Marshal(ss)
+		require.NoError(t, err)
+		messages = append(messages, kafkago.Message{
+			Value: by,
+		})
 	}
 	nbBytes, err := conn.WriteMessages(messages...)
 	require.NoError(t, err)
@@ -102,117 +160,4 @@ func TestWorker(t *testing.T) {
 
 	require.NoError(t, serverApp.Stop(context.Background()))
 	require.NoError(t, workerApp.Stop(context.Background()))
-}
-
-func newMessageLedgerCommittedTransactions(t *testing.T, ledgerName string) kafkago.Message {
-	ev := ledgerEvent.NewEventCommittedTransactions(
-		ledgerEvent.CommittedTransactions{
-			Ledger: ledgerName,
-			Transactions: []ledger.ExpandedTransaction{
-				{
-					Transaction: ledger.Transaction{
-						TransactionData: ledger.TransactionData{
-							Postings: ledger.Postings{
-								{
-									Source:      "world",
-									Destination: "alice",
-									Amount:      10,
-									Asset:       "USD",
-								},
-							},
-							Reference: "ref",
-							Metadata: ledger.Metadata{
-								"metaKey": "metaValue",
-							},
-							Timestamp: time.Now(),
-						},
-						ID: 0,
-					},
-				},
-			},
-			Volumes: ledger.AccountsAssetsVolumes{
-				"alice": ledger.AssetsVolumes{
-					"USD": ledger.Volumes{
-						Input:  10,
-						Output: 20,
-					},
-				},
-			},
-			PostCommitVolumes: ledger.AccountsAssetsVolumes{
-				"alice": ledger.AssetsVolumes{
-					"USD": ledger.Volumes{
-						Input:  10,
-						Output: 20,
-					},
-				},
-			},
-			PreCommitVolumes: ledger.AccountsAssetsVolumes{
-				"alice": ledger.AssetsVolumes{
-					"USD": ledger.Volumes{
-						Input:  10,
-						Output: 20,
-					},
-				},
-			},
-		})
-
-	by, err := json.Marshal(ev)
-	require.NoError(t, err)
-
-	return kafkago.Message{
-		Value: by,
-	}
-}
-
-// remove dependencies to ledger/payments when the filtering feature will be functional.
-func TestWorkerFilter(t *testing.T) {
-	ledgerM := ledgerEvent.NewEventCommittedTransactions(
-		ledgerEvent.CommittedTransactions{
-			Ledger: "test",
-			Transactions: []ledger.ExpandedTransaction{
-				{
-					Transaction: ledger.Transaction{
-						TransactionData: ledger.TransactionData{},
-						ID:              0,
-					},
-					PreCommitVolumes:  ledger.AccountsAssetsVolumes{},
-					PostCommitVolumes: ledger.AccountsAssetsVolumes{},
-				},
-			},
-			Volumes:           ledger.AccountsAssetsVolumes{},
-			PostCommitVolumes: ledger.AccountsAssetsVolumes{},
-			PreCommitVolumes:  ledger.AccountsAssetsVolumes{},
-		})
-
-	paymentsM := paymentsEvent.NewEventSavedPayment(
-		payments.SavedPayment{
-			Identifier: payments.Identifier{
-				Referenced: payments.Referenced{
-					Reference: "",
-					Type:      "",
-				},
-				Provider: "",
-			},
-			Data: payments.Data{
-				Status:        "",
-				InitialAmount: 0,
-				Scheme:        "",
-				Asset:         "",
-				CreatedAt:     time.Now(),
-				Raw:           nil,
-			},
-			Amount: 100,
-			Adjustments: []payments.Adjustment{
-				{
-					Status:   "",
-					Amount:   0,
-					Date:     time.Now(),
-					Raw:      nil,
-					Absolute: true,
-				},
-			},
-		})
-
-	spew.Dump(ledgerM)
-	spew.Dump(paymentsM)
 }
