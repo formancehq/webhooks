@@ -1,0 +1,110 @@
+{
+  "date": "2022-06-30T08:59:23Z",
+  "type": "COMMITTED_TRANSACTIONS",
+  "ledger": "test-gr3454557d",
+  "payload": {
+    "ledger": "test-gr3454557d",
+    "postCommitVolumes": {
+      "test": {
+        "EUR/2": {
+          "balance": 22766,
+          "input": 22766,
+          "output": 0
+        }
+      },
+      "world": {
+        "EUR/2": {
+          "balance": -378283,
+          "input": 0,
+          "output": 378283
+        }
+      }
+    },
+    "preCommitVolumes": {
+      "test": {
+        "EUR/2": {
+          "balance": 21930,
+          "input": 21930,
+          "output": 0
+        }
+      },
+      "world": {
+        "EUR/2": {
+          "balance": -378137,
+          "input": 0,
+          "output": 378137
+        }
+      }
+    },
+    "transactions": [
+      {
+        "metadata": {},
+        "postCommitVolumes": {
+          "test": {
+            "EUR/2": {
+              "balance": 22766,
+              "input": 22766,
+              "output": 0
+            }
+          },
+          "world": {
+            "EUR/2": {
+              "balance": -378283,
+              "input": 0,
+              "output": 378283
+            }
+          }
+        },
+        "postings": [
+          {
+            "amount": 690,
+            "asset": "EUR/2",
+            "destination": "pass:pending",
+            "source": "passes:zv4l8rs6l50sp3bc"
+          },
+          {
+            "amount": 836,
+            "asset": "EUR/2",
+            "destination": "test",
+            "source": "rides:zv4l8rs6l50sp7e8"
+          }
+        ],
+        "preCommitVolumes": {
+          "test": {
+            "EUR/2": {
+              "balance": 21930,
+              "input": 21930,
+              "output": 0
+            }
+          },
+          "world": {
+            "EUR/2": {
+              "balance": -378137,
+              "input": 0,
+              "output": 378137
+            }
+          }
+        },
+        "reference": "",
+        "timestamp": "2022-06-30T08:59:23Z",
+        "txid": 49
+      }
+    ],
+    "volumes": {
+      "test": {
+        "EUR/2": {
+          "balance": 22766,
+          "input": 22766,
+          "output": 0
+        }
+      },
+      "world": {
+        "EUR/2": {
+          "balance": -378283,
+          "input": 0,
+          "output": 378283
+        }
+      }
+    }
+  }
+}

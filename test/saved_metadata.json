@@ -1,0 +1,15 @@
+{
+  "date": "2022-06-30T08:59:23Z",
+  "type": "SAVED_METADATA",
+  "ledger": "test-557ce57d",
+  "payload": {
+    "ledger": "test-5344vfeg57d",
+    "metadata": {
+      "date": "2022-06-30T08:59:23.232Z",
+      "minutes": 32,
+      "prices": {"ppm": 23,"unlock": 100}
+    },
+    "targetId": "49",
+    "targetType": "TRANSACTION"
+  }
+}

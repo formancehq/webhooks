@@ -3,6 +3,7 @@ package test_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -12,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks/constants"
 	webhooks "github.com/numary/webhooks/pkg"
@@ -55,6 +55,8 @@ func TestWorker(t *testing.T) {
 				http.Error(w, "", http.StatusBadRequest)
 				return
 			}
+
+			_, _ = fmt.Fprintf(w, "SIGNATURE VERIFIED\n")
 			return
 		})
 
@@ -105,30 +107,14 @@ func TestWorker(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resBody).Decode(&insertedId))
 	require.NoError(t, resBody.Close())
 
-	f, err := os.Open("../kafka-messages-examples.json")
+	f, err := os.Open("./committed_transactions.json")
 	require.NoError(t, err)
-	byteValue, _ := ioutil.ReadAll(f)
-	var s any
-	require.NoError(t, json.Unmarshal(byteValue, &s))
-	spew.Dump(s)
-
-	type s1 struct {
-		Type    string `json:"type"`
-		Payload any    `json:"payload"`
-	}
-	type s2 struct {
-		ID int `json:"id"`
-	}
+	by, err := ioutil.ReadAll(f)
+	require.NoError(t, err)
 
 	n := 3
 	var messages []kafkago.Message
 	for i := 0; i < n; i++ {
-		ss := s1{
-			Type:    worker.EventTypeLedgerCommittedTransactions,
-			Payload: s2{ID: i},
-		}
-		by, err := json.Marshal(ss)
-		require.NoError(t, err)
 		messages = append(messages, kafkago.Message{
 			Value: by,
 		})
