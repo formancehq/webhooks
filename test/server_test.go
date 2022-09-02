@@ -31,19 +31,19 @@ func TestServer(t *testing.T) {
 
 	t.Run("clean existing configs", func(t *testing.T) {
 		resBody := requestServer(t, http.MethodGet, server.PathConfigs, http.StatusOK)
-		cur := decodeCursorResponse[webhooks.ConfigInserted](t, resBody)
+		cur := decodeCursorResponse[webhooks.Config](t, resBody)
 		for _, cfg := range cur.Data {
 			requestServer(t, http.MethodDelete, server.PathConfigs+"/"+cfg.ID, http.StatusOK)
 		}
 		require.NoError(t, resBody.Close())
 
 		resBody = requestServer(t, http.MethodGet, server.PathConfigs, http.StatusOK)
-		cur = decodeCursorResponse[webhooks.ConfigInserted](t, resBody)
+		cur = decodeCursorResponse[webhooks.Config](t, resBody)
 		assert.Equal(t, 0, len(cur.Data))
 		require.NoError(t, resBody.Close())
 	})
 
-	validConfigs := []webhooks.Config{
+	validConfigs := []webhooks.ConfigUser{
 		{
 			Endpoint:   "https://www.site1.com",
 			EventTypes: []string{"TYPE1", "TYPE2"},
@@ -101,26 +101,26 @@ func TestServer(t *testing.T) {
 
 	t.Run("GET "+server.PathConfigs, func(t *testing.T) {
 		resBody := requestServer(t, http.MethodGet, server.PathConfigs, http.StatusOK)
-		cur := decodeCursorResponse[webhooks.ConfigInserted](t, resBody)
+		cur := decodeCursorResponse[webhooks.Config](t, resBody)
 		assert.Equal(t, len(validConfigs), len(cur.Data))
 		for i, cfg := range validConfigs {
-			assert.Equal(t, cfg.Endpoint, cur.Data[len(validConfigs)-i-1].Config.Endpoint)
-			assert.Equal(t, cfg.EventTypes, cur.Data[len(validConfigs)-i-1].Config.EventTypes)
+			assert.Equal(t, cfg.Endpoint, cur.Data[len(validConfigs)-i-1].ConfigUser.Endpoint)
+			assert.Equal(t, cfg.EventTypes, cur.Data[len(validConfigs)-i-1].ConfigUser.EventTypes)
 		}
 		require.NoError(t, resBody.Close())
 
 		cfg := validConfigs[0]
 		ep := url.QueryEscape(cfg.Endpoint)
 		resBody = requestServer(t, http.MethodGet, server.PathConfigs+"?endpoint="+ep, http.StatusOK)
-		cur = decodeCursorResponse[webhooks.ConfigInserted](t, resBody)
+		cur = decodeCursorResponse[webhooks.Config](t, resBody)
 		assert.Equal(t, 1, len(cur.Data))
-		assert.Equal(t, cfg.Endpoint, cur.Data[0].Config.Endpoint)
+		assert.Equal(t, cfg.Endpoint, cur.Data[0].ConfigUser.Endpoint)
 		require.NoError(t, resBody.Close())
 
 		resBody = requestServer(t, http.MethodGet, server.PathConfigs+"?id="+insertedIds[0], http.StatusOK)
-		cur = decodeCursorResponse[webhooks.ConfigInserted](t, resBody)
+		cur = decodeCursorResponse[webhooks.Config](t, resBody)
 		assert.Equal(t, 1, len(cur.Data))
-		assert.Equal(t, cfg.Endpoint, cur.Data[0].Config.Endpoint)
+		assert.Equal(t, cfg.Endpoint, cur.Data[0].ConfigUser.Endpoint)
 		require.NoError(t, resBody.Close())
 	})
 
@@ -129,7 +129,7 @@ func TestServer(t *testing.T) {
 			requestServer(t, http.MethodPut, server.PathConfigs+"/"+insertedIds[0]+server.PathDeactivate, http.StatusOK)
 
 			resBody := requestServer(t, http.MethodGet, server.PathConfigs, http.StatusOK)
-			cur := decodeCursorResponse[webhooks.ConfigInserted](t, resBody)
+			cur := decodeCursorResponse[webhooks.Config](t, resBody)
 			assert.Equal(t, len(validConfigs), len(cur.Data))
 			assert.Equal(t, false, cur.Data[0].Active)
 			require.NoError(t, resBody.Close())
@@ -141,7 +141,7 @@ func TestServer(t *testing.T) {
 			requestServer(t, http.MethodPut, server.PathConfigs+"/"+insertedIds[0]+server.PathActivate, http.StatusOK)
 
 			resBody := requestServer(t, http.MethodGet, server.PathConfigs, http.StatusOK)
-			cur := decodeCursorResponse[webhooks.ConfigInserted](t, resBody)
+			cur := decodeCursorResponse[webhooks.Config](t, resBody)
 			assert.Equal(t, len(validConfigs), len(cur.Data))
 			assert.Equal(t, true, cur.Data[len(cur.Data)-1].Active)
 			require.NoError(t, resBody.Close())
@@ -172,7 +172,7 @@ func TestServer(t *testing.T) {
 
 	t.Run("GET "+server.PathConfigs+" after delete", func(t *testing.T) {
 		resBody := requestServer(t, http.MethodGet, server.PathConfigs, http.StatusOK)
-		cur := decodeCursorResponse[webhooks.ConfigInserted](t, resBody)
+		cur := decodeCursorResponse[webhooks.Config](t, resBody)
 		assert.Equal(t, 0, len(cur.Data))
 		require.NoError(t, resBody.Close())
 	})

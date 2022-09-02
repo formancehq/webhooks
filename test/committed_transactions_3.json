@@ -1,0 +1,112 @@
+{
+  "date": "2022-07-01T00:00:00Z",
+  "type": "COMMITTED_TRANSACTIONS",
+  "ledger": "ledger3",
+  "payload": {
+    "ledger": "ledger3",
+    "transactions": [
+      {
+        "postings": [
+          {
+            "amount": 50,
+            "asset": "EUR/2",
+            "destination": "alice",
+            "source": "bob"
+          },
+          {
+            "amount": 50,
+            "asset": "EUR/2",
+            "destination": "alice",
+            "source": "bob"
+          }
+        ],
+        "preCommitVolumes": {
+          "alice": {
+            "EUR/2": {
+              "balance": 0,
+              "input": 0,
+              "output": 0
+            }
+          },
+          "bob": {
+            "EUR/2": {
+              "balance": 0,
+              "input": 0,
+              "output": 0
+            }
+          }
+        },
+        "postCommitVolumes": {
+          "alice": {
+            "EUR/2": {
+              "balance": 100,
+              "input": 100,
+              "output": 0
+            }
+          },
+          "bob": {
+            "EUR/2": {
+              "balance": -100,
+              "input": 0,
+              "output": 100
+            }
+          }
+        },
+        "reference": "ref3",
+        "timestamp": "2022-06-30T08:59:23Z",
+        "metadata": {
+          "key": "value"
+        },
+        "txid": 2
+      }
+    ],
+    "preCommitVolumes": {
+      "alice": {
+        "EUR/2": {
+          "balance": 0,
+          "input": 0,
+          "output": 0
+        }
+      },
+      "bob": {
+        "EUR/2": {
+          "balance": 0,
+          "input": 0,
+          "output": 0
+        }
+      }
+    },
+    "postCommitVolumes": {
+      "alice": {
+        "EUR/2": {
+          "balance": 100,
+          "input": 100,
+          "output": 0
+        }
+      },
+      "bob": {
+        "EUR/2": {
+          "balance": -100,
+          "input": 0,
+          "output": 100
+        }
+      }
+    },
+    "volumes": {
+      "alice": {
+        "EUR/2": {
+          "balance": 100,
+          "input": 100,
+          "output": 0
+        }
+      },
+      "bob": {
+        "EUR/2": {
+          "balance": -100,
+          "input": 0,
+          "output": 100
+        }
+      }
+    }
+  }
+}

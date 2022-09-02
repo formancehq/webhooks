@@ -13,7 +13,7 @@ import (
 )
 
 func (h *serverHandler) insertOneConfigHandle(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	cfg := webhooks.Config{}
+	cfg := webhooks.ConfigUser{}
 	if err := decodeJSONBody(r, &cfg, false); err != nil {
 		sharedlogging.GetLogger(r.Context()).Errorf("decodeJSONBody: %s", err)
 		var errIB *errInvalidBody

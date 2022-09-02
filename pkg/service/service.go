@@ -15,7 +15,7 @@ var (
 	ErrConfigNotModified = errors.New("config not modified")
 )
 
-func InsertOneConfig(ctx context.Context, cfg webhooks.Config, store storage.Store) (string, error) {
+func InsertOneConfig(ctx context.Context, cfg webhooks.ConfigUser, store storage.Store) (string, error) {
 	var id string
 	var err error
 	if id, err = store.InsertOneConfig(ctx, cfg); err != nil {

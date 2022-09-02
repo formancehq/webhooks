@@ -95,7 +95,7 @@ func TestWorker(t *testing.T) {
 		require.NoError(t, conn.Close())
 	}()
 
-	cfg := webhooks.Config{
+	cfg := webhooks.ConfigUser{
 		Endpoint:   httptestServer.URL,
 		Secret:     secret,
 		EventTypes: []string{"OTHER_TYPE", worker.EventTypeLedgerCommittedTransactions},
@@ -107,18 +107,27 @@ func TestWorker(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resBody).Decode(&insertedId))
 	require.NoError(t, resBody.Close())
 
-	f, err := os.Open("./committed_transactions.json")
+	f1, err := os.Open("./committed_transactions_1.json")
 	require.NoError(t, err)
-	by, err := ioutil.ReadAll(f)
+	by1, err := ioutil.ReadAll(f1)
 	require.NoError(t, err)
 
-	n := 3
-	var messages []kafkago.Message
-	for i := 0; i < n; i++ {
-		messages = append(messages, kafkago.Message{
-			Value: by,
-		})
+	f2, err := os.Open("./committed_transactions_2.json")
+	require.NoError(t, err)
+	by2, err := ioutil.ReadAll(f2)
+	require.NoError(t, err)
+
+	f3, err := os.Open("./committed_transactions_3.json")
+	require.NoError(t, err)
+	by3, err := ioutil.ReadAll(f3)
+	require.NoError(t, err)
+
+	messages := []kafkago.Message{
+		{Value: by1},
+		{Value: by2},
+		{Value: by3},
 	}
+	n := len(messages)
 	nbBytes, err := conn.WriteMessages(messages...)
 	require.NoError(t, err)
 	require.NotEqual(t, 0, nbBytes)

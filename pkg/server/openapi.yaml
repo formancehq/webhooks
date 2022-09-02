@@ -53,7 +53,7 @@ paths:
                           data:
                             type: array
                             items:
-                              $ref: '#/components/schemas/ConfigInserted'
+                              $ref: '#/components/schemas/Config'
                         required:
                           - data
 
@@ -75,7 +75,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Config'
+              $ref: '#/components/schemas/ConfigUser'
         required: true
       responses:
         "200":
@@ -193,7 +193,7 @@ paths:
 
 components:
   schemas:
-    Config:
+    ConfigUser:
       properties:
         endpoint:
           type: string
@@ -208,7 +208,7 @@ components:
             example: "TYPE1"
           example: ["TYPE1", "TYPE2"]
 
-    ConfigInserted:
+    Config:
       properties:
         endpoint:
           type: string

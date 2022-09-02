@@ -8,18 +8,18 @@ import (
 	"time"
 )
 
-type Config struct {
+type ConfigUser struct {
 	Endpoint   string   `json:"endpoint" bson:"endpoint"`
 	Secret     string   `json:"secret" bson:"secret"`
 	EventTypes []string `json:"eventTypes" bson:"eventTypes"`
 }
 
-type ConfigInserted struct {
-	Config    `bson:"inline"`
-	ID        string    `json:"_id" bson:"_id"`
-	Active    bool      `json:"active" bson:"active"`
-	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
+type Config struct {
+	ConfigUser `bson:"inline"`
+	ID         string    `json:"_id" bson:"_id"`
+	Active     bool      `json:"active" bson:"active"`
+	CreatedAt  time.Time `json:"createdAt" bson:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt" bson:"updatedAt"`
 }
 
 const (
@@ -36,7 +36,7 @@ var (
 	ErrInvalidSecret     = errors.New("decoded secret should be of size 24")
 )
 
-func (c *Config) Validate() error {
+func (c *ConfigUser) Validate() error {
 	if u, err := url.Parse(c.Endpoint); err != nil || len(u.String()) == 0 {
 		return ErrInvalidEndpoint
 	}

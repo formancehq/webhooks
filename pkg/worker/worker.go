@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"github.com/numary/go-libs/sharedlogging"
+	"github.com/numary/webhooks/pkg/kafka"
 	"github.com/numary/webhooks/pkg/storage"
 	kafkago "github.com/segmentio/kafka-go"
 )
 
 type Worker struct {
-	Reader Reader
-	Store  storage.Store
-
+	reader     kafka.Reader
+	store      storage.Store
 	httpClient *http.Client
 
 	stopChan chan chan struct{}
@@ -29,8 +29,8 @@ func NewWorker(store storage.Store, httpClient *http.Client) (*Worker, error) {
 	}
 
 	return &Worker{
-		Reader:     kafkago.NewReader(cfg),
-		Store:      store,
+		reader:     kafkago.NewReader(cfg),
+		store:      store,
 		httpClient: httpClient,
 		stopChan:   make(chan chan struct{}),
 	}, nil
@@ -42,7 +42,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	ctxWithCancel, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	go fetchMessages(ctxWithCancel, w.Reader, msgChan, errChan)
+	go fetchMessages(ctxWithCancel, w.reader, msgChan, errChan)
 
 	for {
 		select {
@@ -70,14 +70,14 @@ func (w *Worker) Run(ctx context.Context) error {
 				return err
 			}
 
-			if err := w.Reader.CommitMessages(ctx, msg); err != nil {
-				return fmt.Errorf("kafka.Reader.CommitMessages: %w", err)
+			if err := w.reader.CommitMessages(ctx, msg); err != nil {
+				return fmt.Errorf("kafka.reader.CommitMessages: %w", err)
 			}
 		}
 	}
 }
 
-func fetchMessages(ctx context.Context, reader Reader, msgChan chan kafkago.Message, errChan chan error) {
+func fetchMessages(ctx context.Context, reader kafka.Reader, msgChan chan kafkago.Message, errChan chan error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -87,7 +87,7 @@ func fetchMessages(ctx context.Context, reader Reader, msgChan chan kafkago.Mess
 			if err != nil {
 				if !errors.Is(err, io.EOF) && ctx.Err() == nil {
 					select {
-					case errChan <- fmt.Errorf("kafka.Reader.FetchMessage: %w", err):
+					case errChan <- fmt.Errorf("kafka.reader.FetchMessage: %w", err):
 					case <-ctx.Done():
 						return
 					}

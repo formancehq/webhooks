@@ -45,7 +45,7 @@ services:
         condition: service_healthy
 
   redpanda:
-    image: docker.vectorized.io/vectorized/redpanda
+    image: docker.vectorized.io/vectorized/redpanda:latest
     command:
       - redpanda
       - start
@@ -67,7 +67,34 @@ services:
       retries: 5
     ports:
       - "9092:9092"
+      - "29092:29092"
       - "9644:9644"
+
+  redpanda-config:
+    image: docker.vectorized.io/vectorized/redpanda:latest
+    command:
+      - cluster
+      - config
+      - import
+      - --filename
+      - /etc/redpanda/redpanda.yaml
+      - --api-urls
+      - redpanda:9644
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    volumes:
+      - ./config/redpanda/config.yaml:/etc/redpanda/redpanda.yaml:ro
+
+  redpanda-ui:
+    image: docker.redpanda.com/vectorized/console:master-0a8fce8
+    ports:
+      - 8081:8080
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: redpanda:29092
 
   collector:
     image: otel/opentelemetry-collector

@@ -38,75 +38,82 @@ func (w *Worker) processMessage(ctx context.Context, msgValue []byte) error {
 	if err := json.Unmarshal(msgValue, &ev); err != nil {
 		return fmt.Errorf("json.Unmarshal event message: %w", err)
 	}
-	eventType := strcase.ToSnake(ev.Type)
 
+	prefix := ""
 	switch ev.Type {
-	case EventTypeLedgerCommittedTransactions:
-		eventType = strings.Join([]string{PrefixLedger, eventType}, ".")
-		fmt.Printf("\nEVENT FETCHED: %s\n", eventType)
-	case EventTypeLedgerSavedMetadata:
-		eventType = strings.Join([]string{PrefixLedger, eventType}, ".")
-		fmt.Printf("\nEVENT FETCHED: %s\n", eventType)
-	case EventTypeLedgerUpdatedMapping:
-		eventType = strings.Join([]string{PrefixLedger, eventType}, ".")
-		fmt.Printf("\nEVENT FETCHED: %s\n", eventType)
-	case EventTypeLedgerRevertedTransaction:
-		eventType = strings.Join([]string{PrefixLedger, eventType}, ".")
-		fmt.Printf("\nEVENT FETCHED: %s\n", eventType)
+	case EventTypeLedgerCommittedTransactions,
+		EventTypeLedgerSavedMetadata,
+		EventTypeLedgerUpdatedMapping,
+		EventTypeLedgerRevertedTransaction:
+		prefix = PrefixLedger
 	case EventTypePaymentsSavedPayment:
-		eventType = strings.Join([]string{PrefixPayments, eventType}, ".")
-		fmt.Printf("\nEVENT FETCHED: %s\n", eventType)
+		prefix = PrefixPayments
 	default:
 		return fmt.Errorf("%w: %s", ErrUnknownEventType, ev.Type)
 	}
 
-	cur, err := w.Store.FindManyConfigs(ctx, map[string]any{webhooks.KeyEventTypes: ev.Type})
+	eventType := strcase.ToSnake(ev.Type)
+	eventType = strings.Join([]string{prefix, eventType}, ".")
+	fmt.Printf("\nEVENT FETCHED: %s\n", eventType)
+
+	cur, err := w.store.FindManyConfigs(ctx, map[string]any{webhooks.KeyEventTypes: ev.Type})
 	if err != nil {
-		return fmt.Errorf("storage.Store.FindManyConfigs: %w", err)
+		return fmt.Errorf("storage.store.FindManyConfigs: %w", err)
 	}
 
 	for _, cfg := range cur.Data {
-		id := uuid.NewString()
-		req, err := http.NewRequestWithContext(ctx,
-			http.MethodPost, cfg.Endpoint, bytes.NewBuffer(msgValue))
-		if err != nil {
-			return fmt.Errorf("http.NewRequestWithContext: %w", err)
+		if err := w.sendWebhook(ctx, cfg, msgValue); err != nil {
+			return err
 		}
+	}
 
-		date := time.Now().UTC()
-		signature, err := security.Sign(id, date, []byte(cfg.Secret), msgValue)
-		if err != nil {
-			return fmt.Errorf("security.Sign: %w", err)
-		}
+	return nil
+}
 
-		req.Header.Set("content-type", "application/json")
-		req.Header.Set("user-agent", "formance-webhooks/v0")
-		req.Header.Set("formance-webhook-id", id)
-		req.Header.Set("formance-webhook-timestamp", fmt.Sprintf("%d", date.Unix()))
-		req.Header.Set("formance-webhook-signature", signature)
-		fmt.Printf("HEADERS: %+v\n", req.Header)
+func (w *Worker) sendWebhook(ctx context.Context, cfg webhooks.Config, msgValue []byte) error {
+	req, err := http.NewRequestWithContext(ctx,
+		http.MethodPost, cfg.Endpoint, bytes.NewBuffer(msgValue))
+	if err != nil {
+		return fmt.Errorf("http.NewRequestWithContext: %w", err)
+	}
 
-		resp, err := w.httpClient.Do(req)
-		request := webhooks.Request{
-			Config:     cfg,
-			Payload:    string(msgValue),
-			StatusCode: resp.StatusCode,
-			Attempt:    0,
-			Date:       date,
-		}
-		if err != nil {
-			request.Error = err.Error()
-		}
+	id := uuid.NewString()
+	date := time.Now().UTC()
+	signature, err := security.Sign(id, date, []byte(cfg.Secret), msgValue)
+	if err != nil {
+		return fmt.Errorf("security.Sign: %w", err)
+	}
 
-		body, _ := io.ReadAll(resp.Body)
-		fmt.Printf("RESP SERVER: %s\n", body)
-		if _, err := w.Store.InsertOneRequest(ctx, request); err != nil {
-			return fmt.Errorf("storage.Store.InsertOneRequest: %w", err)
-		}
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("user-agent", "formance-webhooks/v0")
+	req.Header.Set("formance-webhook-id", id)
+	req.Header.Set("formance-webhook-timestamp", fmt.Sprintf("%d", date.Unix()))
+	req.Header.Set("formance-webhook-signature", signature)
+	fmt.Printf("HEADERS: %+v\n", req.Header)
 
+	resp, err := w.httpClient.Do(req)
+	requestInserted := webhooks.Request{
+		Config:     cfg,
+		Payload:    string(msgValue),
+		StatusCode: resp.StatusCode,
+		Attempt:    0,
+		Date:       date,
+	}
+	if err != nil {
+		requestInserted.Error = err.Error()
+	}
+
+	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			return fmt.Errorf("http.Response.Body.Close: %w", err)
+			panic(fmt.Errorf("http.Response.Body.Close: %w", err))
 		}
+	}()
+
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Printf("RESP SERVER BODY: %s\n", body)
+
+	if _, err := w.store.InsertOneRequest(ctx, requestInserted); err != nil {
+		return fmt.Errorf("storage.store.InsertOneRequest: %w", err)
 	}
 
 	return nil
