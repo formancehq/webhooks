@@ -40,10 +40,9 @@ func run(lc fx.Lifecycle, w *Worker) {
 		OnStop: func(ctx context.Context) error {
 			sharedlogging.GetLogger(ctx).Debugf("stopping worker...")
 			w.Stop(ctx)
-			err1 := w.store.Close(ctx)
-			err2 := w.reader.Close()
-			if err1 != nil || err2 != nil {
-				return fmt.Errorf("[closing store: %s] [closing reader: %w]", err1, err2)
+			w.kafkaClient.Close()
+			if err := w.store.Close(ctx); err != nil {
+				return fmt.Errorf("storage.Store.Close: %w", err)
 			}
 			return nil
 		},

@@ -10,18 +10,19 @@ import (
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks/constants"
 	webhooks "github.com/numary/webhooks/pkg"
+	"github.com/numary/webhooks/pkg/kafka"
 	"github.com/numary/webhooks/pkg/security"
 	"github.com/numary/webhooks/pkg/server"
 	"github.com/numary/webhooks/pkg/worker"
-	kafkago "github.com/segmentio/kafka-go"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.uber.org/fx/fxtest"
 )
@@ -80,21 +81,6 @@ func TestWorker(t *testing.T) {
 		viper.GetString(constants.StorageMongoDatabaseNameFlag)).
 		Collection(constants.MongoCollectionRequests).Drop(context.Background()))
 
-	var err error
-	var conn *kafkago.Conn
-	for conn == nil {
-		conn, err = kafkago.DialLeader(context.Background(), "tcp",
-			viper.GetStringSlice(constants.KafkaBrokersFlag)[0],
-			viper.GetStringSlice(constants.KafkaTopicsFlag)[0], 0)
-		if err != nil {
-			sharedlogging.GetLogger(context.Background()).Debug("connecting to kafka: err: ", err)
-			time.Sleep(3 * time.Second)
-		}
-	}
-	defer func() {
-		require.NoError(t, conn.Close())
-	}()
-
 	cfg := webhooks.ConfigUser{
 		Endpoint:   httptestServer.URL,
 		Secret:     secret,
@@ -122,15 +108,40 @@ func TestWorker(t *testing.T) {
 	by3, err := ioutil.ReadAll(f3)
 	require.NoError(t, err)
 
-	messages := []kafkago.Message{
-		{Value: by1},
-		{Value: by2},
-		{Value: by3},
-	}
-	n := len(messages)
-	nbBytes, err := conn.WriteMessages(messages...)
+	kafkaClient, topics, err := kafka.NewClient()
 	require.NoError(t, err)
-	require.NotEqual(t, 0, nbBytes)
+
+	healthy := false
+	for !healthy {
+		if err := kafkaClient.Ping(context.Background()); err != nil {
+			fmt.Printf("PING: %s\n", err)
+			time.Sleep(3 * time.Second)
+		} else {
+			healthy = true
+		}
+	}
+
+	defer kafkaClient.Close()
+	records := []*kgo.Record{
+		{Topic: topics[0], Value: by1},
+		{Topic: topics[0], Value: by2},
+		{Topic: topics[0], Value: by3},
+	}
+	n := len(records)
+
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for _, record := range records {
+		kafkaClient.Produce(context.Background(), record, func(_ *kgo.Record, err error) {
+			defer wg.Done()
+			if err != nil {
+				fmt.Printf("record had a produce error: %v\n", err)
+			} else {
+				fmt.Printf("record produced\n")
+			}
+		})
+	}
+	wg.Wait()
 
 	t.Run("health check", func(t *testing.T) {
 		requestWorker(t, http.MethodGet, server.PathHealthCheck, http.StatusOK)

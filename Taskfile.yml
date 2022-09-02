@@ -53,7 +53,7 @@ tasks:
   docker:
     cmds:
       - docker compose up -d mongo redpanda redpanda-config redpanda-ui
-      #- docker compose exec -ti redpanda rpk topic create {{.KAFKA_DEFAULT_TOPIC}} || exit 0
+      - docker compose exec -ti redpanda rpk topic create {{.KAFKA_DEFAULT_TOPIC}} || exit 0
 
   coverage:
     cmds:

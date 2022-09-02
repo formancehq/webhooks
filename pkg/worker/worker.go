@@ -2,47 +2,48 @@ package worker
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks/pkg/kafka"
 	"github.com/numary/webhooks/pkg/storage"
-	kafkago "github.com/segmentio/kafka-go"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 type Worker struct {
-	reader     kafka.Reader
-	store      storage.Store
 	httpClient *http.Client
+	store      storage.Store
+
+	kafkaClient kafka.Client
+	kafkaTopics []string
 
 	stopChan chan chan struct{}
 }
 
 func NewWorker(store storage.Store, httpClient *http.Client) (*Worker, error) {
-	cfg, err := NewKafkaReaderConfig()
+	kafkaClient, kafkaTopics, err := kafka.NewClient()
 	if err != nil {
-		return nil, fmt.Errorf("NewKafkaReaderConfig: %w", err)
+		return nil, fmt.Errorf("kafka.NewClient: %w", err)
 	}
 
 	return &Worker{
-		reader:     kafkago.NewReader(cfg),
-		store:      store,
-		httpClient: httpClient,
-		stopChan:   make(chan chan struct{}),
+		httpClient:  httpClient,
+		store:       store,
+		kafkaClient: kafkaClient,
+		kafkaTopics: kafkaTopics,
+		stopChan:    make(chan chan struct{}),
 	}, nil
 }
 
 func (w *Worker) Run(ctx context.Context) error {
-	msgChan := make(chan kafkago.Message)
+	msgChan := make(chan *kgo.Record)
 	errChan := make(chan error)
 	ctxWithCancel, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	go fetchMessages(ctxWithCancel, w.reader, msgChan, errChan)
+	go fetchMessages(ctxWithCancel, w.kafkaClient, msgChan, errChan)
 
 	for {
 		select {
@@ -61,44 +62,52 @@ func (w *Worker) Run(ctx context.Context) error {
 					"offset": msg.Offset,
 				}))
 			sharedlogging.GetLogger(ctx).WithFields(map[string]any{
-				"time":      msg.Time.UTC().Format(time.RFC3339),
+				"time":      msg.Timestamp.UTC().Format(time.RFC3339),
 				"partition": msg.Partition,
 				"headers":   msg.Headers,
 			}).Debug("worker: new kafka message fetched")
 
+			w.kafkaClient.PauseFetchTopics(w.kafkaTopics...)
+
 			if err := w.processMessage(ctx, msg.Value); err != nil {
-				return err
+				return fmt.Errorf("worker.Worker.processMessage: %w", err)
 			}
 
-			if err := w.reader.CommitMessages(ctx, msg); err != nil {
-				return fmt.Errorf("kafka.reader.CommitMessages: %w", err)
-			}
+			w.kafkaClient.ResumeFetchTopics(w.kafkaTopics...)
 		}
 	}
 }
 
-func fetchMessages(ctx context.Context, reader kafka.Reader, msgChan chan kafkago.Message, errChan chan error) {
+func fetchMessages(ctx context.Context, kafkaClient kafka.Client, msgChan chan *kgo.Record, errChan chan error) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			msg, err := reader.FetchMessage(ctx)
-			if err != nil {
-				if !errors.Is(err, io.EOF) && ctx.Err() == nil {
-					select {
-					case errChan <- fmt.Errorf("kafka.reader.FetchMessage: %w", err):
-					case <-ctx.Done():
-						return
+			fetches := kafkaClient.PollFetches(ctx)
+			if errs := fetches.Errors(); len(errs) > 0 {
+				for _, err := range errs {
+					if ctx.Err() == nil {
+						select {
+						case errChan <- fmt.Errorf(
+							"kafka.Client.PollFetches: topic: %s: partition: %d: %w",
+							err.Topic, err.Partition, err.Err):
+						case <-ctx.Done():
+							return
+						}
 					}
 				}
-				continue
 			}
 
-			select {
-			case msgChan <- msg:
-			case <-ctx.Done():
-				return
+			iter := fetches.RecordIter()
+			for !iter.Done() {
+				record := iter.Next()
+				fmt.Println(string(record.Value), "from an iterator!")
+				select {
+				case msgChan <- record:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}
