@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks/constants"
 	"github.com/spf13/viper"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -22,6 +24,7 @@ type Client interface {
 var ErrMechanism = errors.New("unrecognized SASL mechanism")
 
 func NewClient() (*kgo.Client, []string, error) {
+	sharedlogging.Infof("connecting to new kafka client...")
 	var opts []kgo.Opt
 	if viper.GetBool(constants.KafkaTLSEnabledFlag) {
 		opts = append(opts, kgo.DialTLSConfig(&tls.Config{
@@ -58,6 +61,17 @@ func NewClient() (*kgo.Client, []string, error) {
 	kafkaClient, err := kgo.NewClient(opts...)
 	if err != nil {
 		return nil, []string{}, fmt.Errorf("kgo.NewClient: %w", err)
+	}
+
+	ctx := context.Background()
+	healthy := false
+	for !healthy {
+		if err := kafkaClient.Ping(ctx); err != nil {
+			sharedlogging.Infof("trying to reach broker: %s", err)
+			time.Sleep(3 * time.Second)
+		} else {
+			healthy = true
+		}
 	}
 
 	return kafkaClient, topics, nil

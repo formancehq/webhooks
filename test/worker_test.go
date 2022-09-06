@@ -62,7 +62,10 @@ func TestWorker(t *testing.T) {
 		})
 
 	httptestServer := httptest.NewServer(httpHandler)
-	defer httptestServer.Close()
+	defer func() {
+		httptestServer.CloseClientConnections()
+		httptestServer.Close()
+	}()
 
 	serverApp := fxtest.New(t,
 		server.StartModule(
@@ -70,7 +73,6 @@ func TestWorker(t *testing.T) {
 	workerApp := fxtest.New(t,
 		worker.StartModule(
 			viper.GetString(constants.HttpBindAddressWorkerFlag), httptestServer.Client()))
-
 	require.NoError(t, serverApp.Start(context.Background()))
 	require.NoError(t, workerApp.Start(context.Background()))
 
@@ -110,18 +112,25 @@ func TestWorker(t *testing.T) {
 
 	kafkaClient, topics, err := kafka.NewClient()
 	require.NoError(t, err)
+	defer kafkaClient.Close()
 
-	healthy := false
-	for !healthy {
-		if err := kafkaClient.Ping(context.Background()); err != nil {
-			fmt.Printf("PING: %s\n", err)
-			time.Sleep(3 * time.Second)
-		} else {
-			healthy = true
-		}
+	fmt.Printf("POLL FETCHES\n")
+	fetches := kafkaClient.PollFetches(nil) //nolint: staticcheck
+	if errs := fetches.Errors(); len(errs) > 0 {
+		fmt.Printf("kgo.Client.PollFetches: %+v\n", errs)
+		return
 	}
 
-	defer kafkaClient.Close()
+	fmt.Printf("FETCH 1\n")
+	iter := fetches.RecordIter()
+	fmt.Printf("FETCH 2\n")
+	for !iter.Done() {
+		fmt.Printf("FETCH 3\n")
+		record := iter.Next()
+		fmt.Printf("Message consumed from the topic: %s\n", string(record.Value))
+	}
+	fmt.Printf("FETCH FINISHED\n")
+
 	records := []*kgo.Record{
 		{Topic: topics[0], Value: by1},
 		{Topic: topics[0], Value: by2},
@@ -142,6 +151,8 @@ func TestWorker(t *testing.T) {
 		})
 	}
 	wg.Wait()
+
+	fmt.Printf("PRODUCE FINISHED\n")
 
 	t.Run("health check", func(t *testing.T) {
 		requestWorker(t, http.MethodGet, server.PathHealthCheck, http.StatusOK)

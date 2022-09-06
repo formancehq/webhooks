@@ -89,18 +89,10 @@ func (w *Worker) sendWebhook(ctx context.Context, cfg webhooks.Config, msgValue 
 	req.Header.Set("formance-webhook-id", id)
 	req.Header.Set("formance-webhook-timestamp", fmt.Sprintf("%d", date.Unix()))
 	req.Header.Set("formance-webhook-signature", signature)
-	fmt.Printf("HEADERS: %+v\n", req.Header)
 
 	resp, err := w.httpClient.Do(req)
-	requestInserted := webhooks.Request{
-		Config:     cfg,
-		Payload:    string(msgValue),
-		StatusCode: resp.StatusCode,
-		Attempt:    0,
-		Date:       date,
-	}
 	if err != nil {
-		requestInserted.Error = err.Error()
+		return fmt.Errorf("http.Client.Do: %w", err)
 	}
 
 	defer func() {
@@ -108,6 +100,20 @@ func (w *Worker) sendWebhook(ctx context.Context, cfg webhooks.Config, msgValue 
 			panic(fmt.Errorf("http.Response.Body.Close: %w", err))
 		}
 	}()
+
+	requestInserted := webhooks.Request{
+		Date:       date,
+		ID:         id,
+		Config:     cfg,
+		Payload:    string(msgValue),
+		StatusCode: resp.StatusCode,
+	}
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode > http.StatusMultipleChoices {
+		requestInserted.RetryAfter = date.Add(5 * time.Second)
+	} else {
+		requestInserted.Success = true
+	}
 
 	body, _ := io.ReadAll(resp.Body)
 	fmt.Printf("RESP SERVER BODY: %s\n", body)

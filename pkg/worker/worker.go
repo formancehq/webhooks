@@ -67,13 +67,13 @@ func (w *Worker) Run(ctx context.Context) error {
 				"headers":   msg.Headers,
 			}).Debug("worker: new kafka message fetched")
 
-			w.kafkaClient.PauseFetchTopics(w.kafkaTopics...)
+			// w.kafkaClient.PauseFetchTopics(w.kafkaTopics...)
 
 			if err := w.processMessage(ctx, msg.Value); err != nil {
 				return fmt.Errorf("worker.Worker.processMessage: %w", err)
 			}
 
-			w.kafkaClient.ResumeFetchTopics(w.kafkaTopics...)
+			// w.kafkaClient.ResumeFetchTopics(w.kafkaTopics...)
 		}
 	}
 }
@@ -102,7 +102,6 @@ func fetchMessages(ctx context.Context, kafkaClient kafka.Client, msgChan chan *
 			iter := fetches.RecordIter()
 			for !iter.Done() {
 				record := iter.Next()
-				fmt.Println(string(record.Value), "from an iterator!")
 				select {
 				case msgChan <- record:
 				case <-ctx.Done():

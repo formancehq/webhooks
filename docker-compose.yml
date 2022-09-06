@@ -87,9 +87,9 @@ services:
       - ./config/redpanda/config.yaml:/etc/redpanda/redpanda.yaml:ro
 
   redpanda-ui:
-    image: docker.redpanda.com/vectorized/console:master-0a8fce8
+    image: docker.redpanda.com/vectorized/console:latest
     ports:
-      - 8081:8080
+      - "8082:8080"
     depends_on:
       redpanda:
         condition: service_healthy
