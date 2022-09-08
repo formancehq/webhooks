@@ -1,4 +1,4 @@
-package worker
+package workerMessages
 
 import (
 	"bytes"
@@ -20,7 +20,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-type Worker struct {
+type WorkerMessages struct {
 	httpClient *http.Client
 	store      storage.Store
 
@@ -30,13 +30,13 @@ type Worker struct {
 	stopChan chan chan struct{}
 }
 
-func NewWorker(store storage.Store, httpClient *http.Client) (*Worker, error) {
+func NewWorkerMessages(store storage.Store, httpClient *http.Client) (*WorkerMessages, error) {
 	kafkaClient, kafkaTopics, err := kafka.NewClient()
 	if err != nil {
 		return nil, errors.Wrap(err, "kafka.NewClient")
 	}
 
-	return &Worker{
+	return &WorkerMessages{
 		httpClient:  httpClient,
 		store:       store,
 		kafkaClient: kafkaClient,
@@ -45,7 +45,7 @@ func NewWorker(store storage.Store, httpClient *http.Client) (*Worker, error) {
 	}, nil
 }
 
-func (w *Worker) Run(ctx context.Context) error {
+func (w *WorkerMessages) Run(ctx context.Context) error {
 	msgChan := make(chan *kgo.Record)
 	errChan := make(chan error)
 	ctxWithCancel, cancel := context.WithCancel(ctx)
@@ -56,14 +56,14 @@ func (w *Worker) Run(ctx context.Context) error {
 	for {
 		select {
 		case ch := <-w.stopChan:
-			sharedlogging.GetLogger(ctx).Debug("worker: received from stopChan")
+			sharedlogging.GetLogger(ctx).Debug("workerMessages: received from stopChan")
 			close(ch)
 			return nil
 		case <-ctx.Done():
-			sharedlogging.GetLogger(ctx).Debugf("worker: context done: %s", ctx.Err())
+			sharedlogging.GetLogger(ctx).Debugf("workerMessages: context done: %s", ctx.Err())
 			return nil
 		case err := <-errChan:
-			return errors.Wrap(err, "kafka.Worker.fetchMessages")
+			return errors.Wrap(err, "kafka.WorkerMessages.fetchMessages")
 		case msg := <-msgChan:
 			ctx = sharedlogging.ContextWithLogger(ctx,
 				sharedlogging.GetLogger(ctx).WithFields(map[string]any{
@@ -73,12 +73,12 @@ func (w *Worker) Run(ctx context.Context) error {
 				"time":      msg.Timestamp.UTC().Format(time.RFC3339),
 				"partition": msg.Partition,
 				"headers":   msg.Headers,
-			}).Debug("worker: new kafka message fetched")
+			}).Debug("workerMessages: new kafka message fetched")
 
 			w.kafkaClient.PauseFetchTopics(w.kafkaTopics...)
 
 			if err := w.processMessage(ctx, msg.Value); err != nil {
-				return errors.Wrap(err, "worker.Worker.processMessage")
+				return errors.Wrap(err, "worker.WorkerMessages.processMessage")
 			}
 
 			w.kafkaClient.ResumeFetchTopics(w.kafkaTopics...)
@@ -86,19 +86,19 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 }
 
-func (w *Worker) Stop(ctx context.Context) {
+func (w *WorkerMessages) Stop(ctx context.Context) {
 	ch := make(chan struct{})
 	select {
 	case <-ctx.Done():
-		sharedlogging.GetLogger(ctx).Debugf("worker stopped: context done: %s", ctx.Err())
+		sharedlogging.GetLogger(ctx).Debugf("workerMessages stopped: context done: %s", ctx.Err())
 		return
 	case w.stopChan <- ch:
 		select {
 		case <-ctx.Done():
-			sharedlogging.GetLogger(ctx).Debugf("worker stopped via stopChan: context done: %s", ctx.Err())
+			sharedlogging.GetLogger(ctx).Debugf("workerMessages stopped via stopChan: context done: %s", ctx.Err())
 			return
 		case <-ch:
-			sharedlogging.GetLogger(ctx).Debug("worker stopped via stopChan")
+			sharedlogging.GetLogger(ctx).Debug("workerMessages stopped via stopChan")
 		}
 	}
 }
@@ -132,7 +132,7 @@ func fetchMessages(ctx context.Context, kafkaClient kafka.Client, msgChan chan *
 	}
 }
 
-func (w *Worker) processMessage(ctx context.Context, msgValue []byte) error {
+func (w *WorkerMessages) processMessage(ctx context.Context, msgValue []byte) error {
 	var ev webhooks.EventMessage
 	if err := json.Unmarshal(msgValue, &ev); err != nil {
 		return errors.Wrap(err, "json.Unmarshal event message")
@@ -156,7 +156,7 @@ func (w *Worker) processMessage(ctx context.Context, msgValue []byte) error {
 	return nil
 }
 
-func (w *Worker) sendWebhook(ctx context.Context, cfg webhooks.Config, ev webhooks.EventMessage) error {
+func (w *WorkerMessages) sendWebhook(ctx context.Context, cfg webhooks.Config, ev webhooks.EventMessage) error {
 	data, err := json.Marshal(ev)
 	if err != nil {
 		return errors.Wrap(err, "json.Marshal event message")

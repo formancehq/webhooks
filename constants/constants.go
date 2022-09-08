@@ -1,9 +1,9 @@
 package constants
 
 const (
-	LogLevelFlag              = "log-level"
-	HttpBindAddressServerFlag = "http-bind-address-server"
-	HttpBindAddressWorkerFlag = "http-bind-address-worker"
+	LogLevelFlag                      = "log-level"
+	HttpBindAddressServerFlag         = "http-bind-address-server"
+	HttpBindAddressWorkerMessagesFlag = "http-bind-address-worker-messages"
 
 	StorageMongoConnStringFlag   = "storage-mongo-conn-string"
 	StorageMongoDatabaseNameFlag = "storage-mongo-database-name"
@@ -19,8 +19,8 @@ const (
 )
 
 const (
-	DefaultBindAddressServer = ":8080"
-	DefaultBindAddressWorker = ":8081"
+	DefaultBindAddressServer         = ":8080"
+	DefaultBindAddressWorkerMessages = ":8081"
 
 	DefaultMongoConnString   = "mongodb://admin:admin@localhost:27017/"
 	DefaultMongoDatabaseName = "webhooks"

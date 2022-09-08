@@ -1,4 +1,4 @@
-package worker
+package workerMessages
 
 import (
 	"net/http"
@@ -10,7 +10,7 @@ const (
 	PathHealthCheck = "/_healthcheck"
 )
 
-func newWorkerHandler() http.Handler {
+func newWorkerMessagesHandler() http.Handler {
 	h := httprouter.New()
 	h.GET(PathHealthCheck, healthCheckHandle)
 

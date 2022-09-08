@@ -1,4 +1,4 @@
-package worker
+package workerMessages
 
 import (
 	"net/http"

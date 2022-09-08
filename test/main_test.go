@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 	serverBaseURL = fmt.Sprintf("http://localhost%s",
 		viper.GetString(constants.HttpBindAddressServerFlag))
 	workerBaseURL = fmt.Sprintf("http://localhost%s",
-		viper.GetString(constants.HttpBindAddressWorkerFlag))
+		viper.GetString(constants.HttpBindAddressWorkerMessagesFlag))
 
 	os.Exit(m.Run())
 }

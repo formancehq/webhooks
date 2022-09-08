@@ -52,20 +52,20 @@ Available Commands:
   worker      Start webhooks worker
 
 Flags:
-  -h, --help                                 help for webhooks
-      --http-bind-address-server string      server HTTP bind address (default ":8080")
-      --http-bind-address-worker string      worker HTTP bind address (default ":8081")
-      --kafka-brokers strings                Kafka brokers (default [localhost:9092])
-      --kafka-consumer-group string          Kafka consumer group (default "webhooks")
-      --kafka-password string                Kafka password
-      --kafka-sasl-enabled                   Kafka SASL enabled
-      --kafka-sasl-mechanism string          Kafka SASL mechanism
-      --kafka-tls-enabled                    Kafka TLS enabled
-      --kafka-topics strings                 Kafka topics (default [default])
-      --kafka-username string                Kafka username
-      --log-level string                     Log level (default "info")
-      --storage-mongo-conn-string string     Mongo connection string (default "mongodb://admin:admin@localhost:27017/")
-      --storage-mongo-database-name string   Mongo database name (default "webhooks")
+  -h, --help                                          help for webhooks
+      --http-bind-address-server string               server HTTP bind address (default ":8080")
+      --http-bind-address-worker-messages string      worker messsages HTTP bind address (default ":8081")
+      --kafka-brokers strings                         Kafka brokers (default [localhost:9092])
+      --kafka-consumer-group string                   Kafka consumer group (default "webhooks")
+      --kafka-password string                         Kafka password
+      --kafka-sasl-enabled                            Kafka SASL enabled
+      --kafka-sasl-mechanism string                   Kafka SASL mechanism
+      --kafka-tls-enabled                             Kafka TLS enabled
+      --kafka-topics strings                          Kafka topics (default [default])
+      --kafka-username string                         Kafka username
+      --log-level string                              Log level (default "info")
+      --storage-mongo-conn-string string              Mongo connection string (default "mongodb://admin:admin@localhost:27017/")
+      --storage-mongo-database-name string            Mongo database name (default "webhooks")
 
 Use "webhooks [command] --help" for more information about a command. 
 ```

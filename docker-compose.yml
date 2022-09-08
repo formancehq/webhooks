@@ -15,8 +15,8 @@ services:
     environment:
       STORAGE_MONGO_CONN_STRING: "mongodb://admin:admin@mongo:27017/"
 
-  worker:
-    command: reflex -r '\.go' -s -- sh -c "go run . worker"
+  worker-messages:
+    command: reflex -r '\.go' -s -- sh -c "go run . worker messages"
     build:
       target: dev
     healthcheck:
@@ -88,7 +88,7 @@ services:
   redpanda-ui:
     image: docker.redpanda.com/vectorized/console:v2.0.2
     ports:
-      - "8082:8080"
+      - "8888:8080"
     depends_on:
       redpanda:
         condition: service_healthy

@@ -16,7 +16,7 @@ func Init(flagSet *pflag.FlagSet) error {
 	flagSet.String(constants.LogLevelFlag, logrus.InfoLevel.String(), "Log level")
 
 	flagSet.String(constants.HttpBindAddressServerFlag, constants.DefaultBindAddressServer, "server HTTP bind address")
-	flagSet.String(constants.HttpBindAddressWorkerFlag, constants.DefaultBindAddressWorker, "worker HTTP bind address")
+	flagSet.String(constants.HttpBindAddressWorkerMessagesFlag, constants.DefaultBindAddressWorkerMessages, "worker messages HTTP bind address")
 	flagSet.String(constants.StorageMongoConnStringFlag, constants.DefaultMongoConnString, "Mongo connection string")
 	flagSet.String(constants.StorageMongoDatabaseNameFlag, constants.DefaultMongoDatabaseName, "Mongo database name")
 

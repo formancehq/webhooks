@@ -1,4 +1,4 @@
-package worker
+package workerMessages
 
 import (
 	"context"
@@ -12,13 +12,13 @@ import (
 )
 
 func StartModule(addr string, httpClient *http.Client) fx.Option {
-	return fx.Module("webhooks worker",
+	return fx.Module("webhooks worker messages",
 		fx.Provide(
 			func() (string, *http.Client) { return addr, httpClient },
 			httpserver.NewMuxServer,
 			mongo.NewStore,
-			NewWorker,
-			newWorkerHandler,
+			NewWorkerMessages,
+			newWorkerMessagesHandler,
 		),
 		fx.Invoke(httpserver.RegisterHandler),
 		fx.Invoke(httpserver.Run),
@@ -26,19 +26,19 @@ func StartModule(addr string, httpClient *http.Client) fx.Option {
 	)
 }
 
-func run(lc fx.Lifecycle, w *Worker) {
+func run(lc fx.Lifecycle, w *WorkerMessages) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			sharedlogging.GetLogger(ctx).Debugf("starting worker...")
+			sharedlogging.GetLogger(ctx).Debugf("starting worker messages...")
 			go func() {
 				if err := w.Run(ctx); err != nil {
-					sharedlogging.GetLogger(ctx).Errorf("kafka.Worker.Run: %s", err)
+					sharedlogging.GetLogger(ctx).Errorf("kafka.WorkerMessages.Run: %s", err)
 				}
 			}()
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
-			sharedlogging.GetLogger(ctx).Debugf("stopping worker...")
+			sharedlogging.GetLogger(ctx).Debugf("stopping worker messages...")
 			w.Stop(ctx)
 			w.kafkaClient.Close()
 			if err := w.store.Close(ctx); err != nil {

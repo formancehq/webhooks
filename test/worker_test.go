@@ -16,7 +16,7 @@ import (
 	"github.com/numary/webhooks/pkg/kafka"
 	"github.com/numary/webhooks/pkg/security"
 	"github.com/numary/webhooks/pkg/server"
-	"github.com/numary/webhooks/pkg/worker"
+	"github.com/numary/webhooks/pkg/workerMessages"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -26,7 +26,7 @@ import (
 	"go.uber.org/fx/fxtest"
 )
 
-func TestWorker(t *testing.T) {
+func TestWorkerMessages(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -81,10 +81,10 @@ func TestWorker(t *testing.T) {
 			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
 			Collection(constants.MongoCollectionRequests).Drop(context.Background()))
 
-		workerApp := fxtest.New(t,
-			worker.StartModule(
-				viper.GetString(constants.HttpBindAddressWorkerFlag), httpServerSuccess.Client()))
-		require.NoError(t, workerApp.Start(context.Background()))
+		workerMessagesApp := fxtest.New(t,
+			workerMessages.StartModule(
+				viper.GetString(constants.HttpBindAddressWorkerMessagesFlag), httpServerSuccess.Client()))
+		require.NoError(t, workerMessagesApp.Start(context.Background()))
 
 		t.Run("health check", func(t *testing.T) {
 			requestWorker(t, http.MethodGet, server.PathHealthCheck, http.StatusOK)
@@ -132,7 +132,7 @@ func TestWorker(t *testing.T) {
 			require.Equal(t, expectedSentWebhooks, msgs)
 		})
 
-		require.NoError(t, workerApp.Stop(context.Background()))
+		require.NoError(t, workerMessagesApp.Stop(context.Background()))
 	})
 
 	t.Run("failure", func(t *testing.T) {
@@ -140,10 +140,10 @@ func TestWorker(t *testing.T) {
 			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
 			Collection(constants.MongoCollectionRequests).Drop(context.Background()))
 
-		workerApp := fxtest.New(t,
-			worker.StartModule(
-				viper.GetString(constants.HttpBindAddressWorkerFlag), httpServerFail.Client()))
-		require.NoError(t, workerApp.Start(context.Background()))
+		workerMessagesApp := fxtest.New(t,
+			workerMessages.StartModule(
+				viper.GetString(constants.HttpBindAddressWorkerMessagesFlag), httpServerFail.Client()))
+		require.NoError(t, workerMessagesApp.Start(context.Background()))
 
 		t.Run("health check", func(t *testing.T) {
 			requestWorker(t, http.MethodGet, server.PathHealthCheck, http.StatusOK)
@@ -191,7 +191,7 @@ func TestWorker(t *testing.T) {
 			require.Equal(t, expectedSentWebhooks, msgs)
 		})
 
-		require.NoError(t, workerApp.Stop(context.Background()))
+		require.NoError(t, workerMessagesApp.Stop(context.Background()))
 	})
 
 	require.NoError(t, serverApp.Stop(context.Background()))
@@ -229,6 +229,6 @@ func webhooksSuccessHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func webhooksFailHandler(w http.ResponseWriter, _ *http.Request) {
-	http.Error(w, "WEBHOOKS RECEIVED: FAKE NOT FOUND ERROR", http.StatusNotFound)
+	http.Error(w, "WEBHOOKS RECEIVED: FAKE ERROR RESPONSE", http.StatusNotFound)
 	return
 }
