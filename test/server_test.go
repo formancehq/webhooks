@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/numary/webhooks/constants"
@@ -104,8 +105,13 @@ func TestServer(t *testing.T) {
 		cur := decodeCursorResponse[webhooks.Config](t, resBody)
 		assert.Equal(t, len(validConfigs), len(cur.Data))
 		for i, cfg := range validConfigs {
-			assert.Equal(t, cfg.Endpoint, cur.Data[len(validConfigs)-i-1].ConfigUser.Endpoint)
-			assert.Equal(t, cfg.EventTypes, cur.Data[len(validConfigs)-i-1].ConfigUser.EventTypes)
+			assert.Equal(t, cfg.Endpoint, cur.Data[len(validConfigs)-i-1].Endpoint)
+			assert.Equal(t, len(cfg.EventTypes), len(cur.Data[len(validConfigs)-i-1].EventTypes))
+			for j, typ := range cfg.EventTypes {
+				assert.Equal(t,
+					strings.ToLower(typ),
+					strings.ToLower(cur.Data[len(validConfigs)-i-1].EventTypes[j]))
+			}
 		}
 		require.NoError(t, resBody.Close())
 
@@ -114,13 +120,13 @@ func TestServer(t *testing.T) {
 		resBody = requestServer(t, http.MethodGet, server.PathConfigs+"?endpoint="+ep, http.StatusOK)
 		cur = decodeCursorResponse[webhooks.Config](t, resBody)
 		assert.Equal(t, 1, len(cur.Data))
-		assert.Equal(t, cfg.Endpoint, cur.Data[0].ConfigUser.Endpoint)
+		assert.Equal(t, cfg.Endpoint, cur.Data[0].Endpoint)
 		require.NoError(t, resBody.Close())
 
 		resBody = requestServer(t, http.MethodGet, server.PathConfigs+"?id="+insertedIds[0], http.StatusOK)
 		cur = decodeCursorResponse[webhooks.Config](t, resBody)
 		assert.Equal(t, 1, len(cur.Data))
-		assert.Equal(t, cfg.Endpoint, cur.Data[0].ConfigUser.Endpoint)
+		assert.Equal(t, cfg.Endpoint, cur.Data[0].Endpoint)
 		require.NoError(t, resBody.Close())
 	})
 

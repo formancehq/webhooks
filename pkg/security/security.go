@@ -9,10 +9,10 @@ import (
 	"time"
 )
 
-func Sign(id string, timestamp time.Time, secret, payload []byte) (string, error) {
+func Sign(id string, timestamp time.Time, secret string, payload []byte) (string, error) {
 	toSign := fmt.Sprintf("%s.%d.%s", id, timestamp.Unix(), payload)
 
-	hash := hmac.New(sha256.New, secret)
+	hash := hmac.New(sha256.New, []byte(secret))
 	if _, err := hash.Write([]byte(toSign)); err != nil {
 		return "", fmt.Errorf("hash.Hash.Write: %w", err)
 	}
@@ -24,7 +24,7 @@ func Sign(id string, timestamp time.Time, secret, payload []byte) (string, error
 	return fmt.Sprintf("v1,%s", signature), nil
 }
 
-func Verify(signatures, id string, timestamp time.Time, secret, payload []byte) (bool, error) {
+func Verify(signatures, id string, timestamp time.Time, secret string, payload []byte) (bool, error) {
 	computedSignature, err := Sign(id, timestamp, secret, payload)
 	if err != nil {
 		return false, err

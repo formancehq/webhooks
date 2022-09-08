@@ -8,24 +8,29 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/numary/go-libs/sharedapi"
 	"github.com/numary/webhooks/constants"
+	webhooks "github.com/numary/webhooks/pkg"
 	"github.com/numary/webhooks/pkg/env"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var (
-	httpClient    *http.Client
+	httpClient = http.DefaultClient
+
 	serverBaseURL string
 	workerBaseURL string
-	mongoClient   *mongo.Client
+
+	secret = webhooks.NewSecret()
+
+	topic = strings.ReplaceAll(
+		time.Now().UTC().Format(time.RFC3339Nano), ":", "-")
 )
 
 func TestMain(m *testing.M) {
@@ -34,20 +39,12 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	httpClient = http.DefaultClient
+	viper.Set(constants.KafkaTopicsFlag, []string{topic})
+
 	serverBaseURL = fmt.Sprintf("http://localhost%s",
 		viper.GetString(constants.HttpBindAddressServerFlag))
 	workerBaseURL = fmt.Sprintf("http://localhost%s",
 		viper.GetString(constants.HttpBindAddressWorkerFlag))
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	var err error
-	mongoDBUri := viper.GetString(constants.StorageMongoConnStringFlag)
-	if mongoClient, err = mongo.Connect(ctx, options.Client().ApplyURI(mongoDBUri)); err != nil {
-		panic(err)
-	}
 
 	os.Exit(m.Run())
 }
@@ -56,8 +53,8 @@ func requestServer(t *testing.T, method, url string, expectedCode int, body ...a
 	return request(t, method, serverBaseURL+url, body, expectedCode)
 }
 
-func requestWorker(t *testing.T, method, url string, expectedCode int, body ...any) io.ReadCloser {
-	return request(t, method, workerBaseURL+url, body, expectedCode)
+func requestWorker(t *testing.T, method, url string, expectedCode int, body ...any) {
+	request(t, method, workerBaseURL+url, body, expectedCode)
 }
 
 func request(t *testing.T, method, url string, body []any, expectedCode int) io.ReadCloser {

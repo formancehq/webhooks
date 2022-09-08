@@ -68,6 +68,8 @@ paths:
         The secret is the endpoint's verification secret. 
         If not passed or empty, a secret is automatically generated. 
         The format is a random string of bytes of size 24, base64 encoded. (larger size after encoding)
+        
+        All eventTypes are converted to lower-case when inserted.
       operationId: insertOneConfig
       tags:
         - Configs

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -55,10 +56,11 @@ func (c *ConfigUser) Validate() error {
 		return ErrInvalidEventTypes
 	}
 
-	for _, t := range c.EventTypes {
+	for i, t := range c.EventTypes {
 		if len(t) == 0 {
 			return ErrInvalidEventTypes
 		}
+		c.EventTypes[i] = strings.ToLower(t)
 	}
 
 	return nil

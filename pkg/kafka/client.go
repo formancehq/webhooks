@@ -63,10 +63,9 @@ func NewClient() (*kgo.Client, []string, error) {
 		return nil, []string{}, fmt.Errorf("kgo.NewClient: %w", err)
 	}
 
-	ctx := context.Background()
 	healthy := false
 	for !healthy {
-		if err := kafkaClient.Ping(ctx); err != nil {
+		if err := kafkaClient.Ping(context.Background()); err != nil {
 			sharedlogging.Infof("trying to reach broker: %s", err)
 			time.Sleep(3 * time.Second)
 		} else {
