@@ -24,8 +24,9 @@ import (
 var (
 	httpClient = http.DefaultClient
 
-	serverBaseURL string
-	workerBaseURL string
+	serverBaseURL         string
+	workerMessagesBaseURL string
+	workerRetriesBaseURL  string
 
 	secret = webhooks.NewSecret()
 
@@ -43,8 +44,10 @@ func TestMain(m *testing.M) {
 
 	serverBaseURL = fmt.Sprintf("http://localhost%s",
 		viper.GetString(constants.HttpBindAddressServerFlag))
-	workerBaseURL = fmt.Sprintf("http://localhost%s",
+	workerMessagesBaseURL = fmt.Sprintf("http://localhost%s",
 		viper.GetString(constants.HttpBindAddressWorkerMessagesFlag))
+	workerRetriesBaseURL = fmt.Sprintf("http://localhost%s",
+		viper.GetString(constants.HttpBindAddressWorkerRetriesFlag))
 
 	os.Exit(m.Run())
 }
@@ -53,8 +56,12 @@ func requestServer(t *testing.T, method, url string, expectedCode int, body ...a
 	return request(t, method, serverBaseURL+url, body, expectedCode)
 }
 
-func requestWorker(t *testing.T, method, url string, expectedCode int, body ...any) {
-	request(t, method, workerBaseURL+url, body, expectedCode)
+func requestWorkerMessages(t *testing.T, method, url string, expectedCode int, body ...any) {
+	request(t, method, workerMessagesBaseURL+url, body, expectedCode)
+}
+
+func requestWorkerRetries(t *testing.T, method, url string, expectedCode int, body ...any) {
+	request(t, method, workerRetriesBaseURL+url, body, expectedCode)
 }
 
 func request(t *testing.T, method, url string, body []any, expectedCode int) io.ReadCloser {

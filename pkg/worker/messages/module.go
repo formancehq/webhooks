@@ -1,4 +1,4 @@
-package workerMessages
+package messages
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks/pkg/httpserver"
+	"github.com/numary/webhooks/pkg/retry"
 	"github.com/numary/webhooks/pkg/storage/mongo"
 	"go.uber.org/fx"
 )
@@ -17,6 +18,7 @@ func StartModule(addr string, httpClient *http.Client) fx.Option {
 			func() (string, *http.Client) { return addr, httpClient },
 			httpserver.NewMuxServer,
 			mongo.NewStore,
+			retry.BuildSchedule,
 			NewWorkerMessages,
 			newWorkerMessagesHandler,
 		),

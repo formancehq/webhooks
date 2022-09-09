@@ -1,4 +1,4 @@
-package workerMessages
+package healthcheck
 
 import (
 	"net/http"
@@ -7,6 +7,6 @@ import (
 	"github.com/numary/go-libs/sharedlogging"
 )
 
-func healthCheckHandle(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func Handle(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	sharedlogging.GetLogger(r.Context()).Infof("health check OK")
 }

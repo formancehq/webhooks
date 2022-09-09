@@ -7,26 +7,26 @@ import (
 
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks/constants"
-	"github.com/numary/webhooks/pkg/worker/messages"
+	"github.com/numary/webhooks/pkg/worker/retries"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 )
 
-var messagesCmd = &cobra.Command{
-	Use:   "messages",
-	Short: "Run webhooks worker messages",
-	RunE:  RunWorkerMessages,
+var retriesCmd = &cobra.Command{
+	Use:   "retries",
+	Short: "Run webhooks worker retries",
+	RunE:  RunWorkerRetries,
 }
 
-func RunWorkerMessages(cmd *cobra.Command, _ []string) error {
+func RunWorkerRetries(cmd *cobra.Command, _ []string) error {
 	sharedlogging.GetLogger(cmd.Context()).Debugf(
-		"starting webhooks worker messages module: env variables: %+v viper keys: %+v",
+		"starting webhooks worker retries module: env variables: %+v viper keys: %+v",
 		syscall.Environ(), viper.AllKeys())
 
 	app := fx.New(
-		messages.StartModule(
-			viper.GetString(constants.HttpBindAddressWorkerMessagesFlag), http.DefaultClient))
+		retries.StartModule(
+			viper.GetString(constants.HttpBindAddressWorkerRetriesFlag), http.DefaultClient))
 
 	if err := app.Start(cmd.Context()); err != nil {
 		return fmt.Errorf("fx.App.Start: %w", err)
@@ -42,5 +42,5 @@ func RunWorkerMessages(cmd *cobra.Command, _ []string) error {
 }
 
 func init() {
-	workerCmd.AddCommand(messagesCmd)
+	workerCmd.AddCommand(retriesCmd)
 }

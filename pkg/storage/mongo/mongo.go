@@ -151,6 +151,30 @@ func (s Store) UpdateOneConfigSecret(ctx context.Context, id, secret string) (in
 	return resUpdate.ModifiedCount, nil
 }
 
+func (s Store) FindManyRequests(ctx context.Context, filter map[string]any) (sharedapi.Cursor[webhooks.Request], error) {
+	opts := options.Find().SetSort(bson.M{webhooks.KeyID: -1})
+	cur, err := s.requestsCollection.Find(ctx, filter, opts)
+	if err != nil {
+		return sharedapi.Cursor[webhooks.Request]{},
+			fmt.Errorf("mongo.Collection.Find: %w", err)
+	}
+	defer func() {
+		if err := cur.Close(ctx); err != nil {
+			sharedlogging.GetLogger(ctx).Errorf("mongo.Cursor.Close: %s", err)
+		}
+	}()
+
+	var res []webhooks.Request
+	if err := cur.All(ctx, &res); err != nil {
+		return sharedapi.Cursor[webhooks.Request]{},
+			fmt.Errorf("mongo.Cursor.All: %w", err)
+	}
+
+	return sharedapi.Cursor[webhooks.Request]{
+		Data: res,
+	}, nil
+}
+
 func (s Store) InsertOneRequest(ctx context.Context, req webhooks.Request) (primitive.ObjectID, error) {
 	res, err := s.requestsCollection.InsertOne(ctx, req)
 	if err != nil {

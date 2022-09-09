@@ -1,8 +1,10 @@
 package env
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/go-libs/sharedlogging/sharedlogginglogrus"
@@ -12,11 +14,18 @@ import (
 	"github.com/spf13/viper"
 )
 
+var (
+	ErrScheduleEmpty   = errors.New("the retry schedule cannot be empty")
+	ErrScheduleInvalid = errors.New("the retry schedule should only contain valid Go durations")
+)
+
 func Init(flagSet *pflag.FlagSet) error {
 	flagSet.String(constants.LogLevelFlag, logrus.InfoLevel.String(), "Log level")
 
 	flagSet.String(constants.HttpBindAddressServerFlag, constants.DefaultBindAddressServer, "server HTTP bind address")
 	flagSet.String(constants.HttpBindAddressWorkerMessagesFlag, constants.DefaultBindAddressWorkerMessages, "worker messages HTTP bind address")
+	flagSet.String(constants.HttpBindAddressWorkerRetriesFlag, constants.DefaultBindAddressWorkerRetries, "worker retries HTTP bind address")
+	flagSet.StringSlice(constants.RetryScheduleFlag, constants.DefaultRetrySchedule, "worker retries retry schedule")
 	flagSet.String(constants.StorageMongoConnStringFlag, constants.DefaultMongoConnString, "Mongo connection string")
 	flagSet.String(constants.StorageMongoDatabaseNameFlag, constants.DefaultMongoDatabaseName, "Mongo database name")
 
@@ -41,6 +50,19 @@ func Init(flagSet *pflag.FlagSet) error {
 		return fmt.Errorf("logrus.ParseLevel: %w", err)
 	}
 	logger.SetLevel(lvl)
+
+	schedule := viper.GetStringSlice(constants.RetryScheduleFlag)
+	if len(schedule) == 0 {
+		return ErrScheduleEmpty
+	}
+
+	// Check that the schedule is valid
+	for _, s := range schedule {
+		d, err := time.ParseDuration(s)
+		if err != nil || d == time.Duration(0) {
+			return ErrScheduleInvalid
+		}
+	}
 
 	sharedlogging.SetFactory(
 		sharedlogging.StaticLoggerFactory(
