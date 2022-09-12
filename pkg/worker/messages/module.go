@@ -4,21 +4,22 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/webhooks/pkg/httpserver"
-	"github.com/numary/webhooks/pkg/retry"
 	"github.com/numary/webhooks/pkg/storage/mongo"
 	"go.uber.org/fx"
 )
 
-func StartModule(addr string, httpClient *http.Client) fx.Option {
+func StartModule(addr string, httpClient *http.Client, retriesSchedule []time.Duration) fx.Option {
 	return fx.Module("webhooks worker messages",
 		fx.Provide(
-			func() (string, *http.Client) { return addr, httpClient },
+			func() (string, *http.Client, []time.Duration) {
+				return addr, httpClient, retriesSchedule
+			},
 			httpserver.NewMuxServer,
 			mongo.NewStore,
-			retry.BuildSchedule,
 			NewWorkerMessages,
 			newWorkerMessagesHandler,
 		),

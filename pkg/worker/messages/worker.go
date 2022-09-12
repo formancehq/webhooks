@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/numary/go-libs/sharedlogging"
 	webhooks "github.com/numary/webhooks/pkg"
 	"github.com/numary/webhooks/pkg/kafka"
@@ -23,24 +24,24 @@ type WorkerMessages struct {
 	kafkaClient kafka.Client
 	kafkaTopics []string
 
-	retrySchedule []time.Duration
+	retriesSchedule []time.Duration
 
 	stopChan chan chan struct{}
 }
 
-func NewWorkerMessages(store storage.Store, httpClient *http.Client, schedule []time.Duration) (*WorkerMessages, error) {
+func NewWorkerMessages(store storage.Store, httpClient *http.Client, retriesSchedule []time.Duration) (*WorkerMessages, error) {
 	kafkaClient, kafkaTopics, err := kafka.NewClient()
 	if err != nil {
 		return nil, errors.Wrap(err, "kafka.NewClient")
 	}
 
 	return &WorkerMessages{
-		httpClient:    httpClient,
-		store:         store,
-		kafkaClient:   kafkaClient,
-		kafkaTopics:   kafkaTopics,
-		retrySchedule: schedule,
-		stopChan:      make(chan chan struct{}),
+		httpClient:      httpClient,
+		store:           store,
+		kafkaClient:     kafkaClient,
+		kafkaTopics:     kafkaTopics,
+		retriesSchedule: retriesSchedule,
+		stopChan:        make(chan chan struct{}),
 	}, nil
 }
 
@@ -152,18 +153,18 @@ func (w *WorkerMessages) processMessage(ctx context.Context, msgValue []byte) er
 			return errors.Wrap(err, "json.Marshal event message")
 		}
 
-		request, err := webhooks.MakeAttempt(ctx, w.httpClient, w.retrySchedule, 0, cfg, data)
+		attempt, err := webhooks.MakeAttempt(ctx, w.httpClient, w.retriesSchedule, uuid.NewString(), 0, cfg, data)
 		if err != nil {
 			return errors.Wrap(err, "sending webhook")
 		}
 
-		if request.Status == webhooks.StatusRequestSuccess {
+		if attempt.Status == webhooks.StatusAttemptSuccess {
 			sharedlogging.GetLogger(ctx).Infof(
-				"webhook sent with ID %s to %s of type %s", request.RequestID, cfg.Endpoint, ev.Type)
+				"webhook sent with ID %s to %s of type %s", attempt.WebhookID, cfg.Endpoint, ev.Type)
 		}
 
-		if _, err := w.store.InsertOneRequest(ctx, request); err != nil {
-			return errors.Wrap(err, "storage.store.InsertOneRequest")
+		if _, err := w.store.InsertOneAttempt(ctx, attempt); err != nil {
+			return errors.Wrap(err, "storage.store.InsertOneAttempt")
 		}
 	}
 

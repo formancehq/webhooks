@@ -7,6 +7,6 @@ import (
 	"github.com/numary/go-libs/sharedlogging"
 )
 
-func Handle(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+func Handle(_ http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	sharedlogging.GetLogger(r.Context()).Infof("health check OK")
 }

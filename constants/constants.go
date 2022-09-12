@@ -1,12 +1,15 @@
 package constants
 
+import "time"
+
 const (
 	LogLevelFlag                      = "log-level"
 	HttpBindAddressServerFlag         = "http-bind-address-server"
 	HttpBindAddressWorkerMessagesFlag = "http-bind-address-worker-messages"
 	HttpBindAddressWorkerRetriesFlag  = "http-bind-address-worker-retries"
 
-	RetryScheduleFlag = "retry-schedule"
+	RetriesScheduleFlag = "retries-schedule"
+	RetriesCronFlag     = "retries-cron"
 
 	StorageMongoConnStringFlag   = "storage-mongo-conn-string"
 	StorageMongoDatabaseNameFlag = "storage-mongo-database-name"
@@ -30,11 +33,14 @@ const (
 	DefaultMongoDatabaseName = "webhooks"
 
 	MongoCollectionConfigs  = "configs"
-	MongoCollectionRequests = "requests"
+	MongoCollectionAttempts = "attempts"
 
 	DefaultKafkaTopic   = "default"
 	DefaultKafkaBroker  = "localhost:9092"
 	DefaultKafkaGroupID = "webhooks"
 )
 
-var DefaultRetrySchedule = []string{"1m", "5m", "30m", "5h", "24h"}
+var (
+	DefaultRetriesSchedule = []time.Duration{time.Minute, 5 * time.Minute, 30 * time.Minute, 5 * time.Hour, 24 * time.Hour}
+	DefaultRetriesCron     = time.Minute
+)

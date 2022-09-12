@@ -2,6 +2,7 @@ package retries
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -15,17 +16,19 @@ type WorkerRetries struct {
 	httpClient *http.Client
 	store      storage.Store
 
-	retrySchedule []time.Duration
+	retriesCron     time.Duration
+	retriesSchedule []time.Duration
 
 	stopChan chan chan struct{}
 }
 
-func NewWorkerRetries(store storage.Store, httpClient *http.Client, schedule []time.Duration) (*WorkerRetries, error) {
+func NewWorkerRetries(store storage.Store, httpClient *http.Client, retriesCron time.Duration, retriesSchedule []time.Duration) (*WorkerRetries, error) {
 	return &WorkerRetries{
-		httpClient:    httpClient,
-		store:         store,
-		retrySchedule: schedule,
-		stopChan:      make(chan chan struct{}),
+		httpClient:      httpClient,
+		store:           store,
+		retriesCron:     retriesCron,
+		retriesSchedule: retriesSchedule,
+		stopChan:        make(chan chan struct{}),
 	}, nil
 }
 
@@ -34,7 +37,7 @@ func (w *WorkerRetries) Run(ctx context.Context) error {
 	ctxWithCancel, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	go w.retryRequests(ctxWithCancel, errChan)
+	go w.attemptRetries(ctxWithCancel, errChan)
 
 	for {
 		select {
@@ -46,7 +49,7 @@ func (w *WorkerRetries) Run(ctx context.Context) error {
 			sharedlogging.GetLogger(ctx).Debugf("workerRetries: context done: %s", ctx.Err())
 			return nil
 		case err := <-errChan:
-			return errors.Wrap(err, "kafka.WorkerRetries.retryRequests")
+			return errors.Wrap(err, "kafka.WorkerRetries.attemptRetries")
 		}
 	}
 }
@@ -68,37 +71,59 @@ func (w *WorkerRetries) Stop(ctx context.Context) {
 	}
 }
 
-func (w *WorkerRetries) retryRequests(ctx context.Context, errChan chan error) {
+var ErrNoAttemptsFound = errors.New("attemptRetries: no attempts found")
+
+func (w *WorkerRetries) attemptRetries(ctx context.Context, errChan chan error) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
+			// Find all webhookIDs ready to be retried
 			filter := map[string]any{
-				"status":     webhooks.StatusRequestToRetry,
-				"retryAfter": map[string]any{"$lt": time.Now().UTC()},
+				webhooks.KeyStatus:         webhooks.StatusAttemptToRetry,
+				webhooks.KeyNextRetryAfter: map[string]any{"$lt": time.Now().UTC()},
 			}
-			cur, err := w.store.FindManyRequests(ctx, filter)
+			ids, err := w.store.FindDistinctWebhookIDs(ctx, filter)
 			if err != nil {
-				errChan <- errors.Wrap(err, "storage.Store.FindManyRequests to retry")
+				errChan <- errors.Wrap(err, "storage.Store.FindDistinctWebhookIDs to retry")
 				continue
+			} else {
+				sharedlogging.GetLogger(ctx).Debugf("found %d distinct webhookIDs to retry: %+v", len(ids), ids)
 			}
-			sharedlogging.GetLogger(ctx).Debugf("found %d requests to retry", len(cur.Data))
 
-			for _, toRetry := range cur.Data {
-				request, err := webhooks.MakeAttempt(ctx, w.httpClient, w.retrySchedule,
-					toRetry.RetryAttempt+1, toRetry.Config, []byte(toRetry.Payload))
+			for _, id := range ids {
+				filter[webhooks.KeyWebhookID] = id
+				res, err := w.store.FindManyAttempts(ctx, filter)
+				if err != nil {
+					errChan <- errors.Wrap(err, "storage.Store.FindManyAttempts")
+					continue
+				}
+				if len(res.Data) == 0 {
+					errChan <- fmt.Errorf("%w for webhookID: %s", ErrNoAttemptsFound, id)
+					continue
+				}
+
+				newAttemptNb := res.Data[0].RetryAttempt + 1
+				attempt, err := webhooks.MakeAttempt(ctx, w.httpClient, w.retriesSchedule,
+					id, newAttemptNb, res.Data[0].Config, []byte(res.Data[0].Payload))
 				if err != nil {
 					errChan <- errors.Wrap(err, "webhooks.MakeAttempt")
 					continue
 				}
-				if _, err := w.store.InsertOneRequest(ctx, request); err != nil {
-					errChan <- errors.Wrap(err, "storage.Store.InsertOneRequest retried")
+
+				if _, err := w.store.InsertOneAttempt(ctx, attempt); err != nil {
+					errChan <- errors.Wrap(err, "storage.Store.InsertOneAttempt retried")
+					continue
+				}
+
+				if _, _, _, _, err := w.store.UpdateManyAttemptsStatus(ctx, id, attempt.Status); err != nil {
+					errChan <- errors.Wrap(err, "storage.Store.UpdateManyAttemptsStatus")
 					continue
 				}
 			}
-
 		}
-		time.Sleep(time.Minute)
+
+		time.Sleep(w.retriesCron)
 	}
 }

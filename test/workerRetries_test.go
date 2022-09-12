@@ -30,77 +30,227 @@ func TestWorkerRetries(t *testing.T) {
 			viper.GetString(constants.StorageMongoConnStringFlag)))
 	require.NoError(t, err)
 
-	require.NoError(t, mongoClient.Database(
-		viper.GetString(constants.StorageMongoDatabaseNameFlag)).
-		Collection(constants.MongoCollectionRequests).Drop(context.Background()))
+	t.Run("1 attempt to retry with success", func(t *testing.T) {
+		require.NoError(t, mongoClient.Database(
+			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
+			Collection(constants.MongoCollectionAttempts).Drop(context.Background()))
 
-	// New test server with success handler
-	httpServerSuccess := httptest.NewServer(http.HandlerFunc(webhooksSuccessHandler))
-	defer func() {
-		httpServerSuccess.CloseClientConnections()
-		httpServerSuccess.Close()
-	}()
+		// New test server with success handler
+		httpServerSuccess := httptest.NewServer(http.HandlerFunc(webhooksSuccessHandler))
+		defer func() {
+			httpServerSuccess.CloseClientConnections()
+			httpServerSuccess.Close()
+		}()
 
-	failedRequest := webhooks.Request{
-		Date:      time.Now(),
-		RequestID: uuid.NewString(),
-		Config: webhooks.Config{
-			ConfigUser: webhooks.ConfigUser{
-				Endpoint:   httpServerSuccess.URL,
-				Secret:     secret,
-				EventTypes: []string{type1},
+		failedAttempt := webhooks.Attempt{
+			Date:      time.Now().UTC(),
+			WebhookID: uuid.NewString(),
+			Config: webhooks.Config{
+				ConfigUser: webhooks.ConfigUser{
+					Endpoint:   httpServerSuccess.URL,
+					Secret:     secret,
+					EventTypes: []string{type1},
+				},
+				ID:        uuid.NewString(),
+				Active:    true,
+				CreatedAt: time.Now().UTC(),
+				UpdatedAt: time.Now().UTC(),
 			},
-			ID:        uuid.NewString(),
-			Active:    true,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		},
-		Payload:      fmt.Sprintf("{\"type\":\"%s\"}", type1),
-		StatusCode:   http.StatusNotFound,
-		Status:       webhooks.StatusRequestToRetry,
-		RetryAttempt: 0,
-		RetryAfter:   time.Now(),
-	}
+			Payload:        fmt.Sprintf("{\"type\":\"%s\"}", type1),
+			StatusCode:     http.StatusNotFound,
+			Status:         webhooks.StatusAttemptToRetry,
+			RetryAttempt:   0,
+			NextRetryAfter: time.Now().UTC(),
+		}
 
-	_, err = mongoClient.Database(
-		viper.GetString(constants.StorageMongoDatabaseNameFlag)).
-		Collection(constants.MongoCollectionRequests).InsertOne(context.Background(), failedRequest)
-	require.NoError(t, err)
+		_, err = mongoClient.Database(
+			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
+			Collection(constants.MongoCollectionAttempts).InsertOne(context.Background(), failedAttempt)
+		require.NoError(t, err)
 
-	workerRetriesApp := fxtest.New(t,
-		retries.StartModule(
-			viper.GetString(constants.HttpBindAddressWorkerRetriesFlag), httpServerSuccess.Client()))
-	require.NoError(t, workerRetriesApp.Start(context.Background()))
+		retriesSchedule = []time.Duration{time.Second, time.Second, time.Second}
+		viper.Set(constants.RetriesScheduleFlag, retriesSchedule)
 
-	t.Run("health check", func(t *testing.T) {
+		workerRetriesApp := fxtest.New(t,
+			retries.StartModule(
+				viper.GetString(constants.HttpBindAddressWorkerRetriesFlag),
+				httpServerSuccess.Client(),
+				viper.GetDuration(constants.RetriesCronFlag),
+				retriesSchedule))
+		require.NoError(t, workerRetriesApp.Start(context.Background()))
+
 		requestWorkerRetries(t, http.MethodGet, server.PathHealthCheck, http.StatusOK)
-	})
 
-	expectedSentRequests := 2
+		expectedAttempts := 2
 
-	t.Run("failed request should be retried successfully", func(t *testing.T) {
-		sentRequests := 0
-		for sentRequests != expectedSentRequests {
+		attempts := 0
+		for attempts != expectedAttempts {
 			opts := options.Find().SetSort(bson.M{webhooks.KeyID: -1})
 			cur, err := mongoClient.Database(
 				viper.GetString(constants.StorageMongoDatabaseNameFlag)).
-				Collection(constants.MongoCollectionRequests).
+				Collection(constants.MongoCollectionAttempts).
 				Find(context.Background(), bson.M{}, opts)
 			require.NoError(t, err)
-			var results []webhooks.Request
+			var results []webhooks.Attempt
 			require.NoError(t, cur.All(context.Background(), &results))
-			sentRequests = len(results)
-			if sentRequests != expectedSentRequests {
+			attempts = len(results)
+			if attempts != expectedAttempts {
 				time.Sleep(time.Second)
 			} else {
-				// First request should be successful
-				require.Equal(t, webhooks.StatusRequestSuccess, results[0].Status)
-				require.Equal(t, expectedSentRequests-1, results[0].RetryAttempt)
+				// First attempt should be successful
+				require.Equal(t, webhooks.StatusAttemptSuccess, results[0].Status)
+				require.Equal(t, expectedAttempts-1, results[0].RetryAttempt)
 			}
 		}
 		time.Sleep(time.Second)
-		require.Equal(t, expectedSentRequests, sentRequests)
+		require.Equal(t, expectedAttempts, attempts)
+
+		require.NoError(t, workerRetriesApp.Stop(context.Background()))
 	})
 
-	require.NoError(t, workerRetriesApp.Stop(context.Background()))
+	t.Run("retrying an attempt until failed at the end of the schedule", func(t *testing.T) {
+		require.NoError(t, mongoClient.Database(
+			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
+			Collection(constants.MongoCollectionAttempts).Drop(context.Background()))
+
+		// New test server with fail handler
+		httpServerFail := httptest.NewServer(http.HandlerFunc(webhooksFailHandler))
+		defer func() {
+			httpServerFail.CloseClientConnections()
+			httpServerFail.Close()
+		}()
+
+		failedAttempt := webhooks.Attempt{
+			Date:      time.Now().UTC(),
+			WebhookID: uuid.NewString(),
+			Config: webhooks.Config{
+				ConfigUser: webhooks.ConfigUser{
+					Endpoint:   httpServerFail.URL,
+					Secret:     secret,
+					EventTypes: []string{type1},
+				},
+				ID:        uuid.NewString(),
+				Active:    true,
+				CreatedAt: time.Now().UTC(),
+				UpdatedAt: time.Now().UTC(),
+			},
+			Payload:        fmt.Sprintf("{\"type\":\"%s\"}", type1),
+			StatusCode:     http.StatusNotFound,
+			Status:         webhooks.StatusAttemptToRetry,
+			RetryAttempt:   0,
+			NextRetryAfter: time.Now().UTC(),
+		}
+
+		_, err = mongoClient.Database(
+			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
+			Collection(constants.MongoCollectionAttempts).InsertOne(context.Background(), failedAttempt)
+		require.NoError(t, err)
+
+		retriesSchedule = []time.Duration{time.Second, time.Second, time.Second}
+		viper.Set(constants.RetriesScheduleFlag, retriesSchedule)
+
+		workerRetriesApp := fxtest.New(t,
+			retries.StartModule(
+				viper.GetString(constants.HttpBindAddressWorkerRetriesFlag),
+				httpServerFail.Client(),
+				viper.GetDuration(constants.RetriesCronFlag),
+				retriesSchedule))
+		require.NoError(t, workerRetriesApp.Start(context.Background()))
+
+		requestWorkerRetries(t, http.MethodGet, server.PathHealthCheck, http.StatusOK)
+
+		expectedAttempts := 4
+
+		attempts := 0
+		for attempts != expectedAttempts {
+			opts := options.Find().SetSort(bson.M{webhooks.KeyID: -1})
+			cur, err := mongoClient.Database(
+				viper.GetString(constants.StorageMongoDatabaseNameFlag)).
+				Collection(constants.MongoCollectionAttempts).
+				Find(context.Background(), bson.M{}, opts)
+			require.NoError(t, err)
+			var results []webhooks.Attempt
+			require.NoError(t, cur.All(context.Background(), &results))
+			attempts = len(results)
+			if attempts != expectedAttempts {
+				time.Sleep(time.Second)
+			} else {
+				// First attempt should be failed
+				require.Equal(t, webhooks.StatusAttemptFailed, results[0].Status)
+				require.Equal(t, expectedAttempts-1, results[0].RetryAttempt)
+			}
+		}
+		time.Sleep(time.Second)
+		require.Equal(t, expectedAttempts, attempts)
+
+		require.NoError(t, workerRetriesApp.Stop(context.Background()))
+	})
+
+	t.Run("retry long schedule", func(t *testing.T) {
+		retriesSchedule = []time.Duration{time.Hour}
+		viper.Set(constants.RetriesScheduleFlag, retriesSchedule)
+
+		require.NoError(t, mongoClient.Database(
+			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
+			Collection(constants.MongoCollectionAttempts).Drop(context.Background()))
+
+		// New test server with fail handler
+		httpServerFail := httptest.NewServer(http.HandlerFunc(webhooksFailHandler))
+		defer func() {
+			httpServerFail.CloseClientConnections()
+			httpServerFail.Close()
+		}()
+
+		failedAttempt := webhooks.Attempt{
+			Date:      time.Now().UTC(),
+			WebhookID: uuid.NewString(),
+			Config: webhooks.Config{
+				ConfigUser: webhooks.ConfigUser{
+					Endpoint:   httpServerFail.URL,
+					Secret:     secret,
+					EventTypes: []string{type1},
+				},
+				ID:        uuid.NewString(),
+				Active:    true,
+				CreatedAt: time.Now().UTC(),
+				UpdatedAt: time.Now().UTC(),
+			},
+			Payload:        fmt.Sprintf("{\"type\":\"%s\"}", type1),
+			StatusCode:     http.StatusNotFound,
+			Status:         webhooks.StatusAttemptToRetry,
+			RetryAttempt:   0,
+			NextRetryAfter: time.Now().UTC(),
+		}
+
+		_, err = mongoClient.Database(
+			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
+			Collection(constants.MongoCollectionAttempts).InsertOne(context.Background(), failedAttempt)
+		require.NoError(t, err)
+
+		workerRetriesApp := fxtest.New(t,
+			retries.StartModule(
+				viper.GetString(constants.HttpBindAddressWorkerRetriesFlag),
+				httpServerFail.Client(),
+				viper.GetDuration(constants.RetriesCronFlag),
+				retriesSchedule))
+		require.NoError(t, workerRetriesApp.Start(context.Background()))
+
+		requestWorkerRetries(t, http.MethodGet, server.PathHealthCheck, http.StatusOK)
+
+		time.Sleep(3 * time.Second)
+
+		cur, err := mongoClient.Database(
+			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
+			Collection(constants.MongoCollectionAttempts).
+			Find(context.Background(), bson.M{}, nil)
+		require.NoError(t, err)
+		var results []webhooks.Attempt
+		require.NoError(t, cur.All(context.Background(), &results))
+		attempts := len(results)
+		require.Equal(t, 2, attempts)
+		require.Equal(t, webhooks.StatusAttemptFailed, results[0].Status)
+		require.Equal(t, webhooks.StatusAttemptFailed, results[1].Status)
+
+		require.NoError(t, workerRetriesApp.Stop(context.Background()))
+	})
 }

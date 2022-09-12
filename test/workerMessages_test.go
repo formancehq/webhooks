@@ -76,11 +76,17 @@ func TestWorkerMessages(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		require.NoError(t, mongoClient.Database(
 			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
-			Collection(constants.MongoCollectionRequests).Drop(context.Background()))
+			Collection(constants.MongoCollectionAttempts).Drop(context.Background()))
+
+		retriesSchedule = []time.Duration{time.Second}
+		viper.Set(constants.RetriesScheduleFlag, retriesSchedule)
 
 		workerMessagesApp := fxtest.New(t,
 			messages.StartModule(
-				viper.GetString(constants.HttpBindAddressWorkerMessagesFlag), httpServerSuccess.Client()))
+				viper.GetString(constants.HttpBindAddressWorkerMessagesFlag),
+				httpServerSuccess.Client(),
+				retriesSchedule,
+			))
 		require.NoError(t, workerMessagesApp.Start(context.Background()))
 
 		t.Run("health check", func(t *testing.T) {
@@ -110,17 +116,17 @@ func TestWorkerMessages(t *testing.T) {
 			for msgs != expectedSentWebhooks {
 				cur, err := mongoClient.Database(
 					viper.GetString(constants.StorageMongoDatabaseNameFlag)).
-					Collection(constants.MongoCollectionRequests).
+					Collection(constants.MongoCollectionAttempts).
 					Find(context.Background(), bson.M{}, nil)
 				require.NoError(t, err)
-				var results []webhooks.Request
+				var results []webhooks.Attempt
 				require.NoError(t, cur.All(context.Background(), &results))
 				msgs = len(results)
 				if msgs != expectedSentWebhooks {
 					time.Sleep(time.Second)
 				} else {
 					for _, res := range results {
-						require.Equal(t, webhooks.StatusRequestSuccess, res.Status)
+						require.Equal(t, webhooks.StatusAttemptSuccess, res.Status)
 						require.Equal(t, 0, res.RetryAttempt)
 					}
 				}
@@ -135,11 +141,17 @@ func TestWorkerMessages(t *testing.T) {
 	t.Run("failure", func(t *testing.T) {
 		require.NoError(t, mongoClient.Database(
 			viper.GetString(constants.StorageMongoDatabaseNameFlag)).
-			Collection(constants.MongoCollectionRequests).Drop(context.Background()))
+			Collection(constants.MongoCollectionAttempts).Drop(context.Background()))
+
+		retriesSchedule = []time.Duration{time.Second}
+		viper.Set(constants.RetriesScheduleFlag, retriesSchedule)
 
 		workerMessagesApp := fxtest.New(t,
 			messages.StartModule(
-				viper.GetString(constants.HttpBindAddressWorkerMessagesFlag), httpServerFail.Client()))
+				viper.GetString(constants.HttpBindAddressWorkerMessagesFlag),
+				httpServerFail.Client(),
+				retriesSchedule,
+			))
 		require.NoError(t, workerMessagesApp.Start(context.Background()))
 
 		t.Run("health check", func(t *testing.T) {
@@ -169,17 +181,17 @@ func TestWorkerMessages(t *testing.T) {
 			for msgs != expectedSentWebhooks {
 				cur, err := mongoClient.Database(
 					viper.GetString(constants.StorageMongoDatabaseNameFlag)).
-					Collection(constants.MongoCollectionRequests).
+					Collection(constants.MongoCollectionAttempts).
 					Find(context.Background(), bson.M{}, nil)
 				require.NoError(t, err)
-				var results []webhooks.Request
+				var results []webhooks.Attempt
 				require.NoError(t, cur.All(context.Background(), &results))
 				msgs = len(results)
 				if msgs != expectedSentWebhooks {
 					time.Sleep(time.Second)
 				} else {
 					for _, res := range results {
-						require.Equal(t, webhooks.StatusRequestToRetry, res.Status)
+						require.Equal(t, webhooks.StatusAttemptToRetry, res.Status)
 						require.Equal(t, 0, res.RetryAttempt)
 					}
 				}

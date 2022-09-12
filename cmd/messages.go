@@ -26,7 +26,9 @@ func RunWorkerMessages(cmd *cobra.Command, _ []string) error {
 
 	app := fx.New(
 		messages.StartModule(
-			viper.GetString(constants.HttpBindAddressWorkerMessagesFlag), http.DefaultClient))
+			viper.GetString(constants.HttpBindAddressWorkerMessagesFlag),
+			http.DefaultClient,
+			retriesSchedule))
 
 	if err := app.Start(cmd.Context()); err != nil {
 		return fmt.Errorf("fx.App.Start: %w", err)

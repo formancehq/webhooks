@@ -32,15 +32,19 @@ var (
 
 	topic = strings.ReplaceAll(
 		time.Now().UTC().Format(time.RFC3339Nano), ":", "-")
+
+	retriesSchedule []time.Duration
 )
 
 func TestMain(m *testing.M) {
 	flagSet := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	if err := env.Init(flagSet); err != nil {
-		panic(err)
+	var errInit error
+	if _, errInit = env.Init(flagSet); errInit != nil {
+		panic(errInit)
 	}
 
 	viper.Set(constants.KafkaTopicsFlag, []string{topic})
+	viper.Set(constants.RetriesCronFlag, time.Second)
 
 	serverBaseURL = fmt.Sprintf("http://localhost%s",
 		viper.GetString(constants.HttpBindAddressServerFlag))

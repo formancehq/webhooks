@@ -58,8 +58,8 @@ Flags:
       --http-bind-address-server string               server HTTP bind address (default ":8080")
       --http-bind-address-worker-messages string      worker messsages HTTP bind address (default ":8081")
       --http-bind-address-worker-retries string       worker retries HTTP bind address (default ":8082")
-      --retry-schedule strings                        worker retries schedule (default [1m,5m,30m,5h,24h])
-      --http-bind-address-worker-retries string       worker retries HTTP bind address (default ":8082")
+      --retry-schedule durations                      worker retries schedule (default [1m,5m,30m,5h,24h])
+      --retry-cron duration                           worker retries cron (default 1m)
       --kafka-brokers strings                         Kafka brokers (default [localhost:9092])
       --kafka-consumer-group string                   Kafka consumer group (default "webhooks")
       --kafka-password string                         Kafka password

@@ -26,7 +26,11 @@ func RunWorkerRetries(cmd *cobra.Command, _ []string) error {
 
 	app := fx.New(
 		retries.StartModule(
-			viper.GetString(constants.HttpBindAddressWorkerRetriesFlag), http.DefaultClient))
+			viper.GetString(constants.HttpBindAddressWorkerRetriesFlag),
+			http.DefaultClient,
+			viper.GetDuration(constants.RetriesCronFlag),
+			retriesSchedule,
+		))
 
 	if err := app.Start(cmd.Context()); err != nil {
 		return fmt.Errorf("fx.App.Start: %w", err)
