@@ -7,26 +7,35 @@ import (
 	"time"
 
 	"github.com/numary/go-libs/sharedlogging"
+	"github.com/numary/webhooks/cmd/flag"
 	"github.com/numary/webhooks/pkg/httpserver"
 	"github.com/numary/webhooks/pkg/storage/mongo"
+	"github.com/numary/webhooks/pkg/telemetry"
+	"github.com/spf13/viper"
 	"go.uber.org/fx"
 )
 
 func StartModule(addr string, httpClient *http.Client, retriesCron time.Duration, retriesSchedule []time.Duration) fx.Option {
-	return fx.Module("webhooks worker retries",
-		fx.Provide(
-			func() (string, *http.Client, time.Duration, []time.Duration) {
-				return addr, httpClient, retriesCron, retriesSchedule
-			},
-			httpserver.NewMuxServer,
-			mongo.NewStore,
-			NewWorkerRetries,
-			newWorkerRetriesHandler,
-		),
-		fx.Invoke(httpserver.RegisterHandler),
-		fx.Invoke(httpserver.Run),
-		fx.Invoke(run),
-	)
+	var options []fx.Option
+
+	if viper.GetBool(flag.OtelTraces) {
+		options = append(options, telemetry.Module())
+	}
+
+	options = append(options, fx.Provide(
+		func() (string, *http.Client, time.Duration, []time.Duration) {
+			return addr, httpClient, retriesCron, retriesSchedule
+		},
+		httpserver.NewMuxServer,
+		mongo.NewStore,
+		NewWorkerRetries,
+		newWorkerRetriesHandler,
+	))
+	options = append(options, fx.Invoke(httpserver.RegisterHandler))
+	options = append(options, fx.Invoke(httpserver.Run))
+	options = append(options, fx.Invoke(run))
+
+	return fx.Module("webhooks worker retries", options...)
 }
 
 func run(lc fx.Lifecycle, w *WorkerRetries) {
