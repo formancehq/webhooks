@@ -33,16 +33,6 @@ const (
 	KafkaSASLMechanism = "kafka-sasl-mechanism"
 	KafkaUsername      = "kafka-username"
 	KafkaPassword      = "kafka-password"
-
-	OtelTraces                       = "otel-traces"
-	OtelTracesBatch                  = "otel-traces-batch"
-	OtelTracesExporter               = "otel-traces-exporter"
-	OtelTracesExporterJaegerEndpoint = "otel-traces-exporter-jaeger-endpoint"
-	OtelTracesExporterJaegerUser     = "otel-traces-exporter-jaeger-user"
-	OtelTracesExporterJaegerPassword = "otel-traces-exporter-jaeger-password" //nolint:gosec
-	OtelTracesExporterOTLPMode       = "otel-traces-exporter-otlp-mode"
-	OtelTracesExporterOTLPEndpoint   = "otel-traces-exporter-otlp-endpoint"
-	OtelTracesExporterOTLPInsecure   = "otel-traces-exporter-otlp-insecure"
 )
 
 const (

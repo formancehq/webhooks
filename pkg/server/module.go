@@ -1,10 +1,9 @@
 package server
 
 import (
-	"github.com/numary/webhooks/cmd/flag"
+	"github.com/numary/go-libs/sharedotlp/pkg/sharedotlptraces"
 	"github.com/numary/webhooks/pkg/httpserver"
 	"github.com/numary/webhooks/pkg/storage/mongo"
-	"github.com/numary/webhooks/pkg/telemetry"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 )
@@ -12,8 +11,8 @@ import (
 func StartModule(addr string) fx.Option {
 	var options []fx.Option
 
-	if viper.GetBool(flag.OtelTraces) {
-		options = append(options, telemetry.Module())
+	if mod := sharedotlptraces.CLITracesModule(viper.GetViper()); mod != nil {
+		options = append(options, mod)
 	}
 
 	options = append(options, fx.Provide(
