@@ -1,9 +1,9 @@
 package server
 
 import (
+	"github.com/formancehq/webhooks/pkg/httpserver"
+	"github.com/formancehq/webhooks/pkg/storage/mongo"
 	"github.com/numary/go-libs/sharedotlp/pkg/sharedotlptraces"
-	"github.com/numary/webhooks/pkg/httpserver"
-	"github.com/numary/webhooks/pkg/storage/mongo"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 )

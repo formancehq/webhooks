@@ -1,4 +1,4 @@
-module github.com/numary/webhooks
+module github.com/formancehq/webhooks
 
 go 1.18
 
