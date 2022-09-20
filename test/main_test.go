@@ -38,7 +38,7 @@ var (
 func TestMain(m *testing.M) {
 	flagSet := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	var errInit error
-	if _, errInit = flag.Init(flagSet); errInit != nil {
+	if errInit = flag.Init(flagSet); errInit != nil {
 		panic(errInit)
 	}
 

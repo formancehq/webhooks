@@ -5,9 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/numary/go-libs/sharedlogging"
-	"github.com/numary/go-libs/sharedlogging/sharedlogginglogrus"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -53,9 +50,7 @@ var (
 	DefaultRetriesCron     = time.Minute
 )
 
-var ErrScheduleInvalid = errors.New("the retries schedule should only contain durations of at least 1 second")
-
-func Init(flagSet *pflag.FlagSet) (retriesSchedule []time.Duration, err error) {
+func Init(flagSet *pflag.FlagSet) error {
 	flagSet.String(LogLevel, logrus.InfoLevel.String(), "Log level")
 
 	flagSet.String(HttpBindAddressServer, DefaultBindAddressServer, "server HTTP bind address")
@@ -76,45 +71,11 @@ func Init(flagSet *pflag.FlagSet) (retriesSchedule []time.Duration, err error) {
 	flagSet.String(KafkaPassword, "", "Kafka password")
 
 	if err := viper.BindPFlags(flagSet); err != nil {
-		return nil, fmt.Errorf("viper.BinPFlags: %w", err)
+		return fmt.Errorf("viper.BinPFlags: %w", err)
 	}
 
-	LoadEnv(viper.GetViper())
+	viper.GetViper().SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
+	viper.GetViper().AutomaticEnv()
 
-	logger := logrus.New()
-	lvl, err := logrus.ParseLevel(viper.GetString(LogLevel))
-	if err != nil {
-		return nil, fmt.Errorf("logrus.ParseLevel: %w", err)
-	}
-	logger.SetLevel(lvl)
-	if logger.GetLevel() < logrus.DebugLevel {
-		logger.SetFormatter(&logrus.JSONFormatter{})
-	}
-
-	retriesSchedule, err = flagSet.GetDurationSlice(RetriesSchedule)
-	if err != nil {
-		return nil, errors.Wrap(err, "flagSet.GetDurationSlice")
-	}
-
-	// Check that the schedule is valid
-	for _, s := range retriesSchedule {
-		if s < time.Second {
-			return nil, ErrScheduleInvalid
-		}
-	}
-
-	sharedlogging.SetFactory(
-		sharedlogging.StaticLoggerFactory(
-			sharedlogginglogrus.New(logger)))
-
-	return retriesSchedule, nil
-}
-
-func LoadEnv(v *viper.Viper) {
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
-	v.AutomaticEnv()
-}
-
-func init() {
-	LoadEnv(viper.GetViper())
+	return nil
 }
