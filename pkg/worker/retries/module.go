@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/formancehq/webhooks/pkg/httpserver"
-	"github.com/formancehq/webhooks/pkg/storage/mongo"
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/numary/go-libs/sharedotlp/pkg/sharedotlptraces"
 	"github.com/spf13/viper"
+	"go.formance.com/webhooks/pkg/httpserver"
+	"go.formance.com/webhooks/pkg/storage/mongo"
 	"go.uber.org/fx"
 )
 

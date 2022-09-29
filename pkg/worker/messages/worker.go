@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	webhooks "github.com/formancehq/webhooks/pkg"
-	"github.com/formancehq/webhooks/pkg/kafka"
-	"github.com/formancehq/webhooks/pkg/storage"
 	"github.com/google/uuid"
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/pkg/errors"
 	"github.com/twmb/franz-go/pkg/kgo"
+	webhooks "go.formance.com/webhooks/pkg"
+	"go.formance.com/webhooks/pkg/kafka"
+	"go.formance.com/webhooks/pkg/storage"
 )
 
 type WorkerMessages struct {

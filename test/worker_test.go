@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/formancehq/webhooks/pkg/security"
+	"go.formance.com/webhooks/pkg/security"
 )
 
 func webhooksSuccessHandler(w http.ResponseWriter, r *http.Request) {

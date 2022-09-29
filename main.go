@@ -1,6 +1,6 @@
 package main
 
-import "github.com/formancehq/webhooks/cmd"
+import "go.formance.com/webhooks/cmd"
 
 func main() {
 	cmd.Execute()

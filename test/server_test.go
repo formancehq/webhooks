@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/formancehq/webhooks/cmd/flag"
-	webhooks "github.com/formancehq/webhooks/pkg"
-	"github.com/formancehq/webhooks/pkg/server"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.formance.com/webhooks/cmd/flag"
+	webhooks "go.formance.com/webhooks/pkg"
+	"go.formance.com/webhooks/pkg/server"
 	"go.uber.org/fx/fxtest"
 )
 

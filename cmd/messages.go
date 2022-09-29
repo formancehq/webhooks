@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"syscall"
 
-	"github.com/formancehq/webhooks/cmd/flag"
-	"github.com/formancehq/webhooks/pkg/worker/messages"
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.formance.com/webhooks/cmd/flag"
+	"go.formance.com/webhooks/pkg/worker/messages"
 	"go.uber.org/fx"
 )
 

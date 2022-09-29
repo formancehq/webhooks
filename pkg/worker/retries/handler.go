@@ -3,8 +3,8 @@ package retries
 import (
 	"net/http"
 
-	"github.com/formancehq/webhooks/pkg/healthcheck"
 	"github.com/julienschmidt/httprouter"
+	"go.formance.com/webhooks/pkg/healthcheck"
 )
 
 const (

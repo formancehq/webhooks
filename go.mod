@@ -1,4 +1,4 @@
-module github.com/formancehq/webhooks
+module go.formance.com/webhooks
 
 go 1.18
 

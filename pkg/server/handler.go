@@ -3,8 +3,8 @@ package server
 import (
 	"net/http"
 
-	"github.com/formancehq/webhooks/pkg/storage"
 	"github.com/julienschmidt/httprouter"
+	"go.formance.com/webhooks/pkg/storage"
 )
 
 const (

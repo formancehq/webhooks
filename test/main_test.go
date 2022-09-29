@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/formancehq/webhooks/cmd/flag"
-	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/numary/go-libs/sharedapi"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
+	"go.formance.com/webhooks/cmd/flag"
+	webhooks "go.formance.com/webhooks/pkg"
 )
 
 var (

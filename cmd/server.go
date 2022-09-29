@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"syscall"
 
-	"github.com/formancehq/webhooks/cmd/flag"
-	"github.com/formancehq/webhooks/pkg/server"
 	"github.com/numary/go-libs/sharedlogging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.formance.com/webhooks/cmd/flag"
+	"go.formance.com/webhooks/pkg/server"
 	"go.uber.org/fx"
 )
 

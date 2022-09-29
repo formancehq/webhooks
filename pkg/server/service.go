@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	webhooks "github.com/formancehq/webhooks/pkg"
-	"github.com/formancehq/webhooks/pkg/storage"
 	"github.com/numary/go-libs/sharedlogging"
+	webhooks "go.formance.com/webhooks/pkg"
+	"go.formance.com/webhooks/pkg/storage"
 )
 
 var (
