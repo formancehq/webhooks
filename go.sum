@@ -75,6 +75,8 @@ github.com/felixge/httpsnoop v1.0.3 h1:s/nj+GCswXYzN5v2DpNMuMQYe+0DDwt5WVCU6CWBd
 github.com/felixge/httpsnoop v1.0.3/go.mod h1:m8KPJKqk1gH5J9DgRY2ASl2lWCfGKXixSwevea8zH2U=
 github.com/formancehq/go-libs v1.1.0 h1:sIb07+OyJvOKO2F6anEQ/CRczPXh0KS8+bcFhWYUwUw=
 github.com/formancehq/go-libs v1.1.0/go.mod h1:9pIcaXQR4O1biXDfhFurYJZw1piU6sJk+0Vqvu+92ng=
+github.com/formancehq/go-libs v1.2.0 h1:tiPl3usXJD1stSXBonpu1lL/ACD+m6Qh/rinptc9qag=
+github.com/formancehq/go-libs v1.2.0/go.mod h1:9pIcaXQR4O1biXDfhFurYJZw1piU6sJk+0Vqvu+92ng=
 github.com/formancehq/go-libs/sharedotlp v0.0.0-20221118095941-c137790c3362 h1:gGuvT1f/Ef4p5i/pYbIo9UTaADFGIWIHPooJICnq018=
 github.com/formancehq/go-libs/sharedotlp v0.0.0-20221118095941-c137790c3362/go.mod h1:2yT660i6Ay5d5EtMpJgUl6J+wMS1mUBO1SIoCJO2Shc=
 github.com/frankban/quicktest v1.14.3 h1:FJKSZTDHjyhriyC81FLQ0LY93eSai0ZyR/ZIkd3ZUKE=

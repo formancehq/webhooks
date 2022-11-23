@@ -3,7 +3,7 @@ module github.com/formancehq/webhooks
 go 1.18
 
 require (
-	github.com/formancehq/go-libs v1.1.0
+	github.com/formancehq/go-libs v1.2.0
 	github.com/formancehq/go-libs/sharedotlp v0.0.0-20221118095941-c137790c3362
 	github.com/go-chi/chi/v5 v5.0.7
 	github.com/google/uuid v1.3.0
