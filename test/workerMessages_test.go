@@ -37,7 +37,7 @@ func TestWorkerMessages(t *testing.T) {
 	// Cleanup collections
 	require.NoError(t, mongoClient.Database(
 		viper.GetString(flag.StorageMongoDatabaseName)).
-		Collection(storage.DBConfigs).Drop(context.Background()))
+		Collection(storage.CollectionConfigs).Drop(context.Background()))
 
 	// New test server with success handler
 	httpServerSuccess := httptest.NewServer(http.HandlerFunc(webhooksSuccessHandler))
@@ -78,7 +78,7 @@ func TestWorkerMessages(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		require.NoError(t, mongoClient.Database(
 			viper.GetString(flag.StorageMongoDatabaseName)).
-			Collection(storage.DBAttempts).Drop(context.Background()))
+			Collection(storage.CollectionAttempts).Drop(context.Background()))
 
 		retriesSchedule = []time.Duration{time.Second}
 		viper.Set(flag.RetriesSchedule, retriesSchedule)
@@ -118,7 +118,7 @@ func TestWorkerMessages(t *testing.T) {
 			for msgs != expectedSentWebhooks {
 				cur, err := mongoClient.Database(
 					viper.GetString(flag.StorageMongoDatabaseName)).
-					Collection(storage.DBAttempts).
+					Collection(storage.CollectionAttempts).
 					Find(context.Background(), bson.M{}, nil)
 				require.NoError(t, err)
 				var results []webhooks.Attempt
@@ -143,7 +143,7 @@ func TestWorkerMessages(t *testing.T) {
 	t.Run("failure", func(t *testing.T) {
 		require.NoError(t, mongoClient.Database(
 			viper.GetString(flag.StorageMongoDatabaseName)).
-			Collection(storage.DBAttempts).Drop(context.Background()))
+			Collection(storage.CollectionAttempts).Drop(context.Background()))
 
 		retriesSchedule = []time.Duration{time.Second}
 		viper.Set(flag.RetriesSchedule, retriesSchedule)
@@ -183,7 +183,7 @@ func TestWorkerMessages(t *testing.T) {
 			for msgs != expectedSentWebhooks {
 				cur, err := mongoClient.Database(
 					viper.GetString(flag.StorageMongoDatabaseName)).
-					Collection(storage.DBAttempts).
+					Collection(storage.CollectionAttempts).
 					Find(context.Background(), bson.M{}, nil)
 				require.NoError(t, err)
 				var results []webhooks.Attempt

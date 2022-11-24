@@ -35,7 +35,7 @@ func TestWorkerRetries(t *testing.T) {
 	t.Run("1 attempt to retry with success", func(t *testing.T) {
 		require.NoError(t, mongoClient.Database(
 			viper.GetString(flag.StorageMongoDatabaseName)).
-			Collection(storage.DBAttempts).Drop(context.Background()))
+			Collection(storage.CollectionAttempts).Drop(context.Background()))
 
 		// New test server with success handler
 		httpServerSuccess := httptest.NewServer(http.HandlerFunc(webhooksSuccessHandler))
@@ -67,7 +67,7 @@ func TestWorkerRetries(t *testing.T) {
 
 		_, err = mongoClient.Database(
 			viper.GetString(flag.StorageMongoDatabaseName)).
-			Collection(storage.DBAttempts).InsertOne(context.Background(), failedAttempt)
+			Collection(storage.CollectionAttempts).InsertOne(context.Background(), failedAttempt)
 		require.NoError(t, err)
 
 		retriesSchedule = []time.Duration{time.Second, time.Second, time.Second}
@@ -90,7 +90,7 @@ func TestWorkerRetries(t *testing.T) {
 			opts := options.Find().SetSort(bson.M{webhooks.KeyID: -1})
 			cur, err := mongoClient.Database(
 				viper.GetString(flag.StorageMongoDatabaseName)).
-				Collection(storage.DBAttempts).
+				Collection(storage.CollectionAttempts).
 				Find(context.Background(), bson.M{}, opts)
 			require.NoError(t, err)
 			var results []webhooks.Attempt
@@ -113,7 +113,7 @@ func TestWorkerRetries(t *testing.T) {
 	t.Run("retrying an attempt until failed at the end of the schedule", func(t *testing.T) {
 		require.NoError(t, mongoClient.Database(
 			viper.GetString(flag.StorageMongoDatabaseName)).
-			Collection(storage.DBAttempts).Drop(context.Background()))
+			Collection(storage.CollectionAttempts).Drop(context.Background()))
 
 		// New test server with fail handler
 		httpServerFail := httptest.NewServer(http.HandlerFunc(webhooksFailHandler))
@@ -145,7 +145,7 @@ func TestWorkerRetries(t *testing.T) {
 
 		_, err = mongoClient.Database(
 			viper.GetString(flag.StorageMongoDatabaseName)).
-			Collection(storage.DBAttempts).InsertOne(context.Background(), failedAttempt)
+			Collection(storage.CollectionAttempts).InsertOne(context.Background(), failedAttempt)
 		require.NoError(t, err)
 
 		retriesSchedule = []time.Duration{time.Second, time.Second, time.Second}
@@ -168,7 +168,7 @@ func TestWorkerRetries(t *testing.T) {
 			opts := options.Find().SetSort(bson.M{webhooks.KeyID: -1})
 			cur, err := mongoClient.Database(
 				viper.GetString(flag.StorageMongoDatabaseName)).
-				Collection(storage.DBAttempts).
+				Collection(storage.CollectionAttempts).
 				Find(context.Background(), bson.M{}, opts)
 			require.NoError(t, err)
 			var results []webhooks.Attempt
@@ -194,7 +194,7 @@ func TestWorkerRetries(t *testing.T) {
 
 		require.NoError(t, mongoClient.Database(
 			viper.GetString(flag.StorageMongoDatabaseName)).
-			Collection(storage.DBAttempts).Drop(context.Background()))
+			Collection(storage.CollectionAttempts).Drop(context.Background()))
 
 		// New test server with fail handler
 		httpServerFail := httptest.NewServer(http.HandlerFunc(webhooksFailHandler))
@@ -226,7 +226,7 @@ func TestWorkerRetries(t *testing.T) {
 
 		_, err = mongoClient.Database(
 			viper.GetString(flag.StorageMongoDatabaseName)).
-			Collection(storage.DBAttempts).InsertOne(context.Background(), failedAttempt)
+			Collection(storage.CollectionAttempts).InsertOne(context.Background(), failedAttempt)
 		require.NoError(t, err)
 
 		workerRetriesApp := fxtest.New(t,
@@ -243,7 +243,7 @@ func TestWorkerRetries(t *testing.T) {
 
 		cur, err := mongoClient.Database(
 			viper.GetString(flag.StorageMongoDatabaseName)).
-			Collection(storage.DBAttempts).
+			Collection(storage.CollectionAttempts).
 			Find(context.Background(), bson.M{}, nil)
 		require.NoError(t, err)
 		var results []webhooks.Attempt
