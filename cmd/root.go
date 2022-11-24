@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/formancehq/go-libs/sharedlogging"
+	"github.com/formancehq/go-libs/sharedotlp/pkg/sharedotlptraces"
 	"github.com/formancehq/webhooks/cmd/flag"
 	"github.com/spf13/cobra"
 )
@@ -18,6 +19,7 @@ func NewRootCommand() *cobra.Command {
 	}
 
 	var err error
+	sharedotlptraces.InitOTLPTracesFlags(root.PersistentFlags())
 	retriesSchedule, err = flag.Init(root.PersistentFlags())
 	cobra.CheckErr(err)
 
