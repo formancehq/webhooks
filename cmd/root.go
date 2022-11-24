@@ -10,9 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	retriesSchedule []time.Duration
-)
+var retriesSchedule []time.Duration
 
 func NewRootCommand() *cobra.Command {
 	root := &cobra.Command{
