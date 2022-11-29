@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/formancehq/go-libs/sharedapi"
 	"github.com/formancehq/go-libs/sharedlogging"
 	webhooks "github.com/formancehq/webhooks/pkg"
 )
@@ -30,15 +31,19 @@ func (h *serverHandler) insertOneConfigHandle(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if id, err := insertOneConfig(r.Context(), cfg, h.store); err != nil {
+	c, err := insertOneConfig(r.Context(), cfg, h.store)
+	if err == nil {
+		sharedlogging.GetLogger(r.Context()).Infof("POST %s: inserted id %s", PathConfigs, c.ID)
+		resp := sharedapi.BaseResponse[webhooks.Config]{
+			Data: &c,
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			sharedlogging.GetLogger(r.Context()).Errorf("json.Encoder.Encode: %s", err)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+	} else {
 		sharedlogging.GetLogger(r.Context()).Errorf("POST %s: %s", PathConfigs, err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	} else if err := json.NewEncoder(w).Encode(id); err != nil {
-		sharedlogging.GetLogger(r.Context()).Errorf("json.Encoder.Encode: %s", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	} else {
-		sharedlogging.GetLogger(r.Context()).Infof("POST %s: inserted id %s", PathConfigs, id)
 	}
 }

@@ -13,11 +13,11 @@ import (
 
 func (h *serverHandler) activateOneConfigHandle(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, PathParamId)
-	cursor, err := updateOneConfigActivation(r.Context(), true, id, h.store)
+	c, err := updateOneConfigActivation(r.Context(), true, id, h.store)
 	if err == nil {
 		sharedlogging.GetLogger(r.Context()).Infof("PUT %s/%s%s", PathConfigs, id, PathActivate)
 		resp := sharedapi.BaseResponse[webhooks.Config]{
-			Cursor: &cursor,
+			Data: &c,
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			sharedlogging.GetLogger(r.Context()).Errorf("json.Encoder.Encode: %s", err)

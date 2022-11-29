@@ -31,11 +31,11 @@ func (h *serverHandler) changeSecretHandle(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	cursor, err := changeOneConfigSecret(r.Context(), id, sec.Secret, h.store)
+	c, err := changeOneConfigSecret(r.Context(), id, sec.Secret, h.store)
 	if err == nil {
 		sharedlogging.GetLogger(r.Context()).Infof("PUT %s/%s%s", PathConfigs, id, PathChangeSecret)
 		resp := sharedapi.BaseResponse[webhooks.Config]{
-			Cursor: &cursor,
+			Data: &c,
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			sharedlogging.GetLogger(r.Context()).Errorf("json.Encoder.Encode: %s", err)
