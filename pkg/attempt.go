@@ -34,22 +34,23 @@ type Attempt struct {
 	NextRetryAfter time.Time `json:"nextRetryAfter,omitempty" bson:"nextRetryAfter,omitempty"`
 }
 
-func MakeAttempt(ctx context.Context, httpClient *http.Client, schedule []time.Duration, webhookID string, attemptNb int, cfg Config, data []byte) (Attempt, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.Endpoint, bytes.NewBuffer(data))
+func MakeAttempt(ctx context.Context, httpClient *http.Client, schedule []time.Duration, id string, attemptNb int, cfg Config, payload []byte) (Attempt, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.Endpoint, bytes.NewBuffer(payload))
 	if err != nil {
 		return Attempt{}, errors.Wrap(err, "http.NewRequestWithContext")
 	}
 
-	date := time.Now().UTC()
-	signature, err := security.Sign(webhookID, date, cfg.Secret, data)
+	ts := time.Now().UTC()
+	timestamp := ts.Unix()
+	signature, err := security.Sign(id, timestamp, cfg.Secret, payload)
 	if err != nil {
 		return Attempt{}, errors.Wrap(err, "security.Sign")
 	}
 
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("user-agent", "formance-webhooks/v0")
-	req.Header.Set("formance-webhook-id", webhookID)
-	req.Header.Set("formance-webhook-timestamp", fmt.Sprintf("%d", date.Unix()))
+	req.Header.Set("formance-webhook-id", id)
+	req.Header.Set("formance-webhook-timestamp", fmt.Sprintf("%d", timestamp))
 	req.Header.Set("formance-webhook-signature", signature)
 
 	resp, err := httpClient.Do(req)
@@ -64,14 +65,17 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, schedule []time.D
 		}
 	}()
 
-	body, _ := io.ReadAll(resp.Body)
-	sharedlogging.GetLogger(ctx).Debugf("webhooks.MakeAttempt: server response body: %s\n", body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return Attempt{}, errors.Wrap(err, "io.ReadAll")
+	}
+	sharedlogging.GetLogger(ctx).Debugf("webhooks.MakeAttempt: server response body: %s", string(body))
 
 	attempt := Attempt{
-		WebhookID:    webhookID,
-		Date:         date,
+		WebhookID:    id,
+		Date:         ts,
 		Config:       cfg,
-		Payload:      string(data),
+		Payload:      string(payload),
 		StatusCode:   resp.StatusCode,
 		RetryAttempt: attemptNb,
 	}
@@ -87,6 +91,6 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, schedule []time.D
 	}
 
 	attempt.Status = StatusAttemptToRetry
-	attempt.NextRetryAfter = date.Add(schedule[attemptNb])
+	attempt.NextRetryAfter = ts.Add(schedule[attemptNb])
 	return attempt, nil
 }
