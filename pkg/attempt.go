@@ -34,7 +34,7 @@ type Attempt struct {
 	NextRetryAfter time.Time `json:"nextRetryAfter,omitempty" bson:"nextRetryAfter,omitempty"`
 }
 
-func MakeAttempt(ctx context.Context, httpClient *http.Client, schedule []time.Duration, id string, attemptNb int, cfg Config, payload []byte) (Attempt, error) {
+func MakeAttempt(ctx context.Context, httpClient *http.Client, schedule []time.Duration, id string, attemptNb int, cfg Config, payload []byte, isTest bool) (Attempt, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.Endpoint, bytes.NewBuffer(payload))
 	if err != nil {
 		return Attempt{}, errors.Wrap(err, "http.NewRequestWithContext")
@@ -52,6 +52,7 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, schedule []time.D
 	req.Header.Set("formance-webhook-id", id)
 	req.Header.Set("formance-webhook-timestamp", fmt.Sprintf("%d", timestamp))
 	req.Header.Set("formance-webhook-signature", signature)
+	req.Header.Set("formance-webhook-test", fmt.Sprintf("%v", isTest))
 
 	resp, err := httpClient.Do(req)
 	if err != nil {

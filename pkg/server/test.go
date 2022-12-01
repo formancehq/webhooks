@@ -23,7 +23,7 @@ func (h *serverHandler) testOneConfigHandle(w http.ResponseWriter, r *http.Reque
 		}
 		sharedlogging.GetLogger(r.Context()).Infof("GET %s/%s%s", PathConfigs, id, PathTest)
 		attempt, err := webhooks.MakeAttempt(r.Context(), h.httpClient, nil,
-			uuid.NewString(), 0, cfgs[0], []byte(`{"data":"test"}`))
+			uuid.NewString(), 0, cfgs[0], []byte(`{"data":"test"}`), true)
 		if err != nil {
 			sharedlogging.GetLogger(r.Context()).Errorf("GET %s/%s%s: %s", PathConfigs, id, PathTest, err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)

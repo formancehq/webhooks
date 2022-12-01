@@ -210,6 +210,7 @@ func TestServer(t *testing.T) {
 		attempt, ok := decodeSingleResponse[webhooks.Attempt](t, resBody)
 		assert.Equal(t, true, ok)
 		assert.Equal(t, webhooks.StatusAttemptSuccess, attempt.Status)
+		assert.Equal(t, `{"data":"test"}`, attempt.Payload)
 
 		requestServer(t, http.MethodDelete, server.PathConfigs+"/"+c.ID, http.StatusOK)
 	})
