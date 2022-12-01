@@ -2,13 +2,12 @@ package server
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/formancehq/go-libs/sharedapi"
 	"github.com/formancehq/go-libs/sharedlogging"
 	webhooks "github.com/formancehq/webhooks/pkg"
+	"github.com/pkg/errors"
 )
 
 func (h *serverHandler) insertOneConfigHandle(w http.ResponseWriter, r *http.Request) {
@@ -25,13 +24,13 @@ func (h *serverHandler) insertOneConfigHandle(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := cfg.Validate(); err != nil {
-		err := fmt.Errorf("invalid config: %w", err)
+		err := errors.Wrap(err, "invalid config")
 		sharedlogging.GetLogger(r.Context()).Errorf(err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	c, err := insertOneConfig(r.Context(), cfg, h.store)
+	c, err := h.store.InsertOneConfig(r.Context(), cfg)
 	if err == nil {
 		sharedlogging.GetLogger(r.Context()).Infof("POST %s: inserted id %s", PathConfigs, c.ID)
 		resp := sharedapi.BaseResponse[webhooks.Config]{

@@ -2,13 +2,14 @@ package server
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/formancehq/go-libs/sharedapi"
 	"github.com/formancehq/go-libs/sharedlogging"
 	webhooks "github.com/formancehq/webhooks/pkg"
+	"github.com/formancehq/webhooks/pkg/storage"
 	"github.com/go-chi/chi/v5"
+	"github.com/pkg/errors"
 )
 
 func (h *serverHandler) changeSecretHandle(w http.ResponseWriter, r *http.Request) {
@@ -31,7 +32,7 @@ func (h *serverHandler) changeSecretHandle(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	c, err := changeOneConfigSecret(r.Context(), id, sec.Secret, h.store)
+	c, err := h.store.UpdateOneConfigSecret(r.Context(), id, sec.Secret)
 	if err == nil {
 		sharedlogging.GetLogger(r.Context()).Infof("PUT %s/%s%s", PathConfigs, id, PathChangeSecret)
 		resp := sharedapi.BaseResponse[webhooks.Config]{
@@ -42,8 +43,8 @@ func (h *serverHandler) changeSecretHandle(w http.ResponseWriter, r *http.Reques
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
-	} else if errors.Is(err, ErrConfigNotFound) {
-		sharedlogging.GetLogger(r.Context()).Infof("PUT %s/%s%s: %s", PathConfigs, id, PathChangeSecret, ErrConfigNotFound)
+	} else if errors.Is(err, storage.ErrConfigNotFound) {
+		sharedlogging.GetLogger(r.Context()).Infof("PUT %s/%s%s: %s", PathConfigs, id, PathChangeSecret, storage.ErrConfigNotFound)
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 	} else {
 		sharedlogging.GetLogger(r.Context()).Errorf("PUT %s/%s%s: %s", PathConfigs, id, PathChangeSecret, err)
