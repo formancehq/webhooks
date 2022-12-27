@@ -57,6 +57,8 @@ func (s Store) FindManyConfigs(ctx context.Context, filters map[string]string) (
 			sq = sq.Where("id = ?", val)
 		case "endpoint":
 			sq = sq.Where("endpoint = ?", val)
+		case "active":
+			sq = sq.Where("active = ?", val)
 		case "event_types":
 			sq = sq.Where("? = ANY (event_types)", val)
 		default:
