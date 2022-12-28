@@ -48,7 +48,7 @@ func NewStore() (storage.Store, error) {
 	return Store{db: db}, nil
 }
 
-func (s Store) FindManyConfigs(ctx context.Context, filters map[string]string) ([]webhooks.Config, error) {
+func (s Store) FindManyConfigs(ctx context.Context, filters map[string]any) ([]webhooks.Config, error) {
 	res := []webhooks.Config{}
 	sq := s.db.NewSelect().Model(&res)
 	for key, val := range filters {

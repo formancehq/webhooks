@@ -151,9 +151,9 @@ func (w *Worker) processMessage(ctx context.Context, msgValue []byte) error {
 		ev.Type = strings.Join([]string{eventApp, eventType}, ".")
 	}
 
-	filter := map[string]string{
+	filter := map[string]any{
 		"event_types": ev.Type,
-		"active":      "true",
+		"active":      true,
 	}
 	sharedlogging.GetLogger(ctx).Debugf("searching configs with filter: %+v", filter)
 	cfgs, err := w.store.FindManyConfigs(ctx, filter)
