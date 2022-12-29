@@ -18,5 +18,3 @@ repos:
   - id: goimports
   - id: gofmt
   - id: golangci-lint
-#  - id: gotests
-  - id: commitlint

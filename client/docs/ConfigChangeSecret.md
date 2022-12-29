@@ -1,49 +1,54 @@
-# ChangeOneConfigSecretRequest
+# ConfigChangeSecret
 
 ## Properties
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**Secret** | **string** |  | 
+**Secret** | Pointer to **string** |  | [optional] 
 
 ## Methods
 
-### NewChangeOneConfigSecretRequest
+### NewConfigChangeSecret
 
-`func NewChangeOneConfigSecretRequest(secret string, ) *ChangeOneConfigSecretRequest`
+`func NewConfigChangeSecret() *ConfigChangeSecret`
 
-NewChangeOneConfigSecretRequest instantiates a new ChangeOneConfigSecretRequest object
+NewConfigChangeSecret instantiates a new ConfigChangeSecret object
 This constructor will assign default values to properties that have it defined,
 and makes sure properties required by API are set, but the set of arguments
 will change when the set of required properties is changed
 
-### NewChangeOneConfigSecretRequestWithDefaults
+### NewConfigChangeSecretWithDefaults
 
-`func NewChangeOneConfigSecretRequestWithDefaults() *ChangeOneConfigSecretRequest`
+`func NewConfigChangeSecretWithDefaults() *ConfigChangeSecret`
 
-NewChangeOneConfigSecretRequestWithDefaults instantiates a new ChangeOneConfigSecretRequest object
+NewConfigChangeSecretWithDefaults instantiates a new ConfigChangeSecret object
 This constructor will only assign default values to properties that have it defined,
 but it doesn't guarantee that properties required by API are set
 
 ### GetSecret
 
-`func (o *ChangeOneConfigSecretRequest) GetSecret() string`
+`func (o *ConfigChangeSecret) GetSecret() string`
 
 GetSecret returns the Secret field if non-nil, zero value otherwise.
 
 ### GetSecretOk
 
-`func (o *ChangeOneConfigSecretRequest) GetSecretOk() (*string, bool)`
+`func (o *ConfigChangeSecret) GetSecretOk() (*string, bool)`
 
 GetSecretOk returns a tuple with the Secret field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetSecret
 
-`func (o *ChangeOneConfigSecretRequest) SetSecret(v string)`
+`func (o *ConfigChangeSecret) SetSecret(v string)`
 
 SetSecret sets Secret field to given value.
 
+### HasSecret
+
+`func (o *ConfigChangeSecret) HasSecret() bool`
+
+HasSecret returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

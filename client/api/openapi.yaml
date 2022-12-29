@@ -1,20 +1,10 @@
 openapi: 3.0.3
 info:
   title: Webhooks server
-  version: v0.2.2
+  version: WEBHOOKS_VERSION
 servers:
 - url: /
 paths:
-  /_healthcheck:
-    get:
-      operationId: healthCheck
-      responses:
-        "200":
-          content: {}
-          description: The server is healthy
-      summary: Health check of the server
-      tags:
-      - Health
   /configs:
     get:
       description: Sorted by updated date descending
@@ -43,14 +33,14 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/getManyConfigs_200_response'
+                $ref: '#/components/schemas/ConfigsResponse'
           description: OK
       summary: Get many configs
       tags:
       - Webhooks
     post:
       description: |
-        Insert a new config.
+        Insert a new webhooks config.
 
         The endpoint should be a valid https URL and be unique.
 
@@ -59,7 +49,7 @@ paths:
         The format is a random string of bytes of size 24, base64 encoded. (larger size after encoding)
 
         All eventTypes are converted to lower-case when inserted.
-      operationId: insertOneConfig
+      operationId: insertConfig
       requestBody:
         content:
           application/json:
@@ -80,13 +70,13 @@ paths:
                 example: endpoints should be valid urls
                 type: string
           description: Bad Request
-      summary: |
-        Insert a new config
+      summary: Insert a new config
       tags:
       - Webhooks
   /configs/{id}:
     delete:
-      operationId: deleteOneConfig
+      description: Delete a webhooks config by ID.
+      operationId: deleteConfig
       parameters:
       - description: Config ID
         explode: false
@@ -106,9 +96,8 @@ paths:
       - Webhooks
   /configs/{id}/test:
     get:
-      description: |
-        Test one config by sending a webhook to its endpoint.
-      operationId: testOneConfig
+      description: Test a config by sending a webhook to its endpoint.
+      operationId: testConfig
       parameters:
       - description: Config ID
         explode: false
@@ -131,7 +120,9 @@ paths:
       - Webhooks
   /configs/{id}/activate:
     put:
-      operationId: activateOneConfig
+      description: "Activate a webhooks config by ID, to start receiving webhooks\
+        \ to its endpoint."
+      operationId: activateConfig
       parameters:
       - description: Config ID
         explode: false
@@ -157,7 +148,9 @@ paths:
       - Webhooks
   /configs/{id}/deactivate:
     put:
-      operationId: deactivateOneConfig
+      description: "Deactivate a webhooks config by ID, to stop receiving webhooks\
+        \ to its endpoint."
+      operationId: deactivateConfig
       parameters:
       - description: Config ID
         explode: false
@@ -184,11 +177,11 @@ paths:
   /configs/{id}/secret/change:
     put:
       description: |
-        Change the signing secret of the endpoint of a config.
+        Change the signing secret of the endpoint of a webhooks config.
 
         If not passed or empty, a secret is automatically generated.
         The format is a random string of bytes of size 24, base64 encoded. (larger size after encoding)
-      operationId: changeOneConfigSecret
+      operationId: changeConfigSecret
       parameters:
       - description: Config ID
         explode: false
@@ -203,7 +196,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/changeOneConfigSecret_request'
+              $ref: '#/components/schemas/ConfigChangeSecret'
       responses:
         "200":
           content:
@@ -238,6 +231,73 @@ components:
             example: TYPE1
             type: string
           type: array
+      required:
+      - endpoint
+      - eventTypes
+      type: object
+    ConfigsResponse:
+      example:
+        cursor:
+          data:
+          - createdAt: 2000-01-23T04:56:07.000+00:00
+            endpoint: https://example.com
+            active: true
+            id: 046b6c7f-0b8a-43b9-b35d-6489e6daee91
+            secret: V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3
+            eventTypes:
+            - TYPE1
+            - TYPE2
+            updatedAt: 2000-01-23T04:56:07.000+00:00
+          - createdAt: 2000-01-23T04:56:07.000+00:00
+            endpoint: https://example.com
+            active: true
+            id: 046b6c7f-0b8a-43b9-b35d-6489e6daee91
+            secret: V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3
+            eventTypes:
+            - TYPE1
+            - TYPE2
+            updatedAt: 2000-01-23T04:56:07.000+00:00
+          hasMore: false
+      properties:
+        cursor:
+          $ref: '#/components/schemas/Cursor'
+      required:
+      - cursor
+      type: object
+    Cursor:
+      example:
+        data:
+        - createdAt: 2000-01-23T04:56:07.000+00:00
+          endpoint: https://example.com
+          active: true
+          id: 046b6c7f-0b8a-43b9-b35d-6489e6daee91
+          secret: V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3
+          eventTypes:
+          - TYPE1
+          - TYPE2
+          updatedAt: 2000-01-23T04:56:07.000+00:00
+        - createdAt: 2000-01-23T04:56:07.000+00:00
+          endpoint: https://example.com
+          active: true
+          id: 046b6c7f-0b8a-43b9-b35d-6489e6daee91
+          secret: V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3
+          eventTypes:
+          - TYPE1
+          - TYPE2
+          updatedAt: 2000-01-23T04:56:07.000+00:00
+        hasMore: false
+      properties:
+        hasMore:
+          example: false
+          type: boolean
+        data:
+          items:
+            $ref: '#/components/schemas/Config'
+          type: array
+      required:
+      - data
+      - hasMore
+      type: object
     ConfigResponse:
       example:
         data:
@@ -253,6 +313,8 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/Config'
+      required:
+      - data
       type: object
     Config:
       example:
@@ -292,6 +354,14 @@ components:
         updatedAt:
           format: date-time
           type: string
+    ConfigChangeSecret:
+      example:
+        secret: V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3
+      properties:
+        secret:
+          example: V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3
+          type: string
+      type: object
     AttemptResponse:
       example:
         data:
@@ -317,6 +387,8 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/Attempt'
+      required:
+      - data
       type: object
     Attempt:
       example:
@@ -369,39 +441,3 @@ components:
         nextRetryAfter:
           format: date-time
           type: string
-    Cursor:
-      properties:
-        has_more:
-          example: false
-          type: boolean
-      type: object
-    getManyConfigs_200_response_cursor_allOf:
-      properties:
-        data:
-          items:
-            $ref: '#/components/schemas/Config'
-          type: array
-      required:
-      - data
-      type: object
-    getManyConfigs_200_response_cursor:
-      allOf:
-      - $ref: '#/components/schemas/Cursor'
-      - $ref: '#/components/schemas/getManyConfigs_200_response_cursor_allOf'
-    getManyConfigs_200_response:
-      example:
-        cursor: null
-      properties:
-        cursor:
-          $ref: '#/components/schemas/getManyConfigs_200_response_cursor'
-      required:
-      - cursor
-      type: object
-    changeOneConfigSecret_request:
-      properties:
-        secret:
-          example: V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3
-          type: string
-      required:
-      - secret
-      type: object

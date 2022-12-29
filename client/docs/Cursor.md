@@ -4,13 +4,14 @@
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**HasMore** | Pointer to **bool** |  | [optional] 
+**HasMore** | **bool** |  | 
+**Data** | [**[]Config**](Config.md) |  | 
 
 ## Methods
 
 ### NewCursor
 
-`func NewCursor() *Cursor`
+`func NewCursor(hasMore bool, data []Config, ) *Cursor`
 
 NewCursor instantiates a new Cursor object
 This constructor will assign default values to properties that have it defined,
@@ -44,11 +45,26 @@ and a boolean to check if the value has been set.
 
 SetHasMore sets HasMore field to given value.
 
-### HasHasMore
 
-`func (o *Cursor) HasHasMore() bool`
+### GetData
 
-HasHasMore returns a boolean if a field has been set.
+`func (o *Cursor) GetData() []Config`
+
+GetData returns the Data field if non-nil, zero value otherwise.
+
+### GetDataOk
+
+`func (o *Cursor) GetDataOk() (*[]Config, bool)`
+
+GetDataOk returns a tuple with the Data field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetData
+
+`func (o *Cursor) SetData(v []Config)`
+
+SetData sets Data field to given value.
+
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
