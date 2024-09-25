@@ -1,8 +1,6 @@
 VERSION 0.8
 
-IMPORT github.com/formancehq/earthly:tags/v0.16.0 AS core
-
-
+IMPORT github.com/formancehq/earthly:tags/v0.16.1 AS core
 
 FROM core+base-image
 
@@ -47,7 +45,7 @@ deploy:
     RUN kubectl patch Versions.formance.com default -p "{\"spec\":{\"webhooks\": \"${tag}\"}}" --type=merge
 
 deploy-staging:
-    BUILD --pass-args core+deployer-module --MODULE=webhooks
+    BUILD --pass-args core+deploy-staging
 
 lint:
     FROM core+builder-image
