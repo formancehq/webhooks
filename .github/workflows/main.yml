@@ -113,3 +113,55 @@ jobs:
           SPEAKEASY_API_KEY: ${{ secrets.SPEAKEASY_API_KEY }}
           FURY_TOKEN: ${{ secrets.FURY_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+
+  Deploy:
+    runs-on: "ubuntu-latest"
+    if: github.ref == 'refs/heads/main'
+    environment: staging
+    needs:
+      - GoReleaser
+      - Tests
+    steps:
+      - uses: earthly/actions-setup@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version: "latest"
+      - uses: 'actions/checkout@v4'
+        with:
+          fetch-depth: 0
+      - name: Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: "staging-regions: Sset Operator, Agent, Modules tags"
+        env:
+          # Only Region deployment need the token in order to deploy with argocd
+          ARGOCD_REGION_AUTH_TOKEN: ${{ secrets.ARGOCD_REGION_AUTH_TOKEN }}
+          # Only for module
+          STAGING_CLUSTER_KUBECONTEXT_NAME: ${{ secrets.STAGING_CLUSTER_KUBECONTEXT_NAME }}
+          STAGING_CLUSTER_NAME: ${{ secrets.STAGING_CLUSTER_NAME }}
+          STAGING_CLUSTER_REGION: ${{ secrets.STAGING_CLUSTER_REGION }}
+          TAG: ${{ github.sha }}
+        run: >
+          earthly  
+          --no-output 
+          --secret AUTH_TOKEN=$ARGOCD_REGION_AUTH_TOKEN
+          +staging-application-set
+          --TAG=$TAG
+
+      - name: "staging-regions: Sync"
+        env:
+          # Only Region deployment need the token in order to deploy with argocd
+          ARGOCD_REGION_AUTH_TOKEN: ${{ secrets.ARGOCD_REGION_AUTH_TOKEN }}
+          STAGING_CLUSTER_KUBECONTEXT_NAME: ${{ secrets.STAGING_CLUSTER_KUBECONTEXT_NAME }}
+          STAGING_CLUSTER_NAME: ${{ secrets.STAGING_CLUSTER_NAME }}
+          STAGING_CLUSTER_REGION: ${{ secrets.STAGING_CLUSTER_REGION }}
+          TAG: ${{ github.sha }}
+        run: >
+          earthly  
+          --no-output 
+          --secret AUTH_TOKEN=$ARGOCD_REGION_AUTH_TOKEN
+          +staging-application-sync
+          --TAG=$TAG
