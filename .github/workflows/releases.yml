@@ -17,12 +17,6 @@ jobs:
         uses: ./.github/actions/env
         with:
           token: ${{ secrets.NUMARY_GITHUB_TOKEN }}
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: "NumaryBot"
-          password: ${{ secrets.NUMARY_GITHUB_TOKEN }}
       - run: >
           earthly
           --no-output --use-inline-cache --save-inline-cache --remote-cache=ghcr.io/formancehq/earthly --push
