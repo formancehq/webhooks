@@ -1,13 +1,14 @@
 VERSION 0.8
 
-IMPORT github.com/formancehq/earthly:main AS core
-#IMPORT github.com/formancehq/earthly:tags/v0.16.2 AS core
+IMPORT github.com/formancehq/earthly:tags/v0.16.3 AS core
 
 FROM core+base-image
 
 sources:
+    FROM core+builder-image
     WORKDIR /src
-    COPY go.* .
+    COPY go.mod go.sum ./
+    RUN go mod download
     COPY --dir pkg cmd .
     COPY main.go .
     SAVE ARTIFACT /src
