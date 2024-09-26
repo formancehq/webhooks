@@ -67,7 +67,7 @@ jobs:
           token: ${{ secrets.NUMARY_GITHUB_TOKEN }}
       - run: >
           earthly
-          --no-output
+          --no-output --use-inline-cache --save-inline-cache --remote-cache=ghcr.io/formancehq/earthly --push
           --allow-privileged
           --secret SPEAKEASY_API_KEY=$SPEAKEASY_API_KEY
           ${{ contains(github.event.pull_request.labels.*.name, 'no-cache') && '--no-cache' || '' }}
@@ -100,7 +100,7 @@ jobs:
           password: ${{ secrets.NUMARY_GITHUB_TOKEN }}
       - run: >
           earthly
-          --no-output
+          --no-output --use-inline-cache --save-inline-cache --remote-cache=ghcr.io/formancehq/earthly --push
           --allow-privileged
           --secret SPEAKEASY_API_KEY=$SPEAKEASY_API_KEY
           --secret GITHUB_TOKEN=$GITHUB_TOKEN
@@ -142,7 +142,7 @@ jobs:
           ARGOCD_REGION_AUTH_TOKEN: ${{ secrets.ARGOCD_REGION_AUTH_TOKEN }}
         run: >
           earthly  
-          --no-output 
+          --no-output --use-inline-cache --save-inline-cache --remote-cache=ghcr.io/formancehq/earthly --push 
           --secret AUTH_TOKEN=$ARGOCD_REGION_AUTH_TOKEN
           +deploy-staging
           --TAG=$TAG
