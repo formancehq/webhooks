@@ -5,7 +5,7 @@ go 1.22.0
 toolchain go1.22.7
 
 require (
-	github.com/ThreeDotsLabs/watermill v1.3.7
+	github.com/ThreeDotsLabs/watermill v1.4.0
 	github.com/alitto/pond v1.8.3
 	github.com/formancehq/go-libs v1.7.1
 	github.com/go-chi/chi/v5 v5.1.0
