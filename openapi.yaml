@@ -111,6 +111,32 @@ paths:
       security:
         - Authorization:
             - webhooks:write
+    put:
+      summary: Update one config
+      description: Update a webhooks config by ID.
+      operationId: updateConfig
+      tags:
+        - webhooks.v1
+      parameters:
+        - name: id
+          in: path
+          description: Config ID
+          required: true
+          schema:
+            type: string
+            example: 4997257d-dfb6-445b-929c-cbe2ab182818
+      responses:
+        '200':
+          description: Config successfully updated.
+        default:
+          description: Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - Authorization:
+            - webhooks:write
   /configs/{id}/test:
     get:
       summary: Test one config
