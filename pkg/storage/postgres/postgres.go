@@ -3,8 +3,9 @@ package postgres
 import (
 	"context"
 	"database/sql"
-	"github.com/uptrace/bun/dialect/pgdialect"
 	"time"
+
+	"github.com/uptrace/bun/dialect/pgdialect"
 
 	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/formancehq/webhooks/pkg/storage"
