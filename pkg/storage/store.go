@@ -25,4 +25,5 @@ type Store interface {
 	UpdateAttemptsStatus(ctx context.Context, webhookID string, status string) ([]webhooks.Attempt, error)
 	InsertOneAttempt(ctx context.Context, att webhooks.Attempt) error
 	Close(ctx context.Context) error
+	UpdateOneConfig(ctx context.Context, id string, cfg webhooks.ConfigUser) error
 }
