@@ -3,22 +3,24 @@ package cmd
 import (
 	"net/http"
 
-	"github.com/formancehq/go-libs/auth"
-	"github.com/formancehq/go-libs/aws/iam"
-	"github.com/formancehq/go-libs/publish"
+	"github.com/formancehq/go-libs/v2/otlp"
+
+	"github.com/formancehq/go-libs/v2/auth"
+	"github.com/formancehq/go-libs/v2/aws/iam"
+	"github.com/formancehq/go-libs/v2/publish"
 
 	"github.com/formancehq/webhooks/pkg/storage/postgres"
 
-	"github.com/formancehq/go-libs/bun/bunconnect"
-	"github.com/formancehq/go-libs/licence"
+	"github.com/formancehq/go-libs/v2/bun/bunconnect"
+	"github.com/formancehq/go-libs/v2/licence"
 
-	"github.com/formancehq/go-libs/otlp/otlptraces"
+	"github.com/formancehq/go-libs/v2/otlp/otlptraces"
 
-	"github.com/formancehq/go-libs/httpserver"
-	"github.com/formancehq/go-libs/service"
+	"github.com/formancehq/go-libs/v2/httpserver"
+	"github.com/formancehq/go-libs/v2/service"
 	"github.com/formancehq/webhooks/cmd/flag"
 	"github.com/formancehq/webhooks/pkg/backoff"
-	"github.com/formancehq/webhooks/pkg/otlp"
+	innerotlp "github.com/formancehq/webhooks/pkg/otlp"
 	"github.com/formancehq/webhooks/pkg/worker"
 	"github.com/spf13/cobra"
 	"go.uber.org/fx"
@@ -31,6 +33,7 @@ func newWorkerCommand() *cobra.Command {
 		RunE:    runWorker,
 		PreRunE: handleAutoMigrate,
 	}
+	otlp.AddFlags(ret.Flags())
 	otlptraces.AddFlags(ret.Flags())
 	publish.AddFlags(ServiceName, ret.Flags())
 	auth.AddFlags(ret.Flags())
@@ -58,13 +61,14 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 
 	return service.New(
 		cmd.OutOrStdout(),
-		otlp.HttpClientModule(),
+		innerotlp.HttpClientModule(),
 		licence.FXModuleFromFlags(cmd, ServiceName),
 		postgres.NewModule(*connectionOptions, service.IsDebug(cmd)),
 		fx.Provide(worker.NewWorkerHandler),
 		fx.Invoke(func(lc fx.Lifecycle, h http.Handler) {
 			lc.Append(httpserver.NewHook(h, httpserver.WithAddress(listen)))
 		}),
+		otlp.FXModuleFromFlags(cmd),
 		otlptraces.FXModuleFromFlags(cmd),
 		worker.StartModule(
 			cmd,
