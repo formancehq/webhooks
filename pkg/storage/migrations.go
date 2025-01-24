@@ -6,16 +6,16 @@ import (
 	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/pkg/errors"
 
-	"github.com/formancehq/go-libs/migrations"
+	"github.com/formancehq/go-libs/v2/migrations"
 	"github.com/uptrace/bun"
 )
 
 func Migrate(ctx context.Context, db *bun.DB) error {
-	migrator := migrations.NewMigrator()
+	migrator := migrations.NewMigrator(db)
 	migrator.RegisterMigrations(
 		migrations.Migration{
 			Name: "Init schema",
-			Up: func(tx bun.Tx) error {
+			Up: func(ctx context.Context, tx bun.IDB) error {
 				_, err := tx.NewCreateTable().Model((*webhooks.Config)(nil)).
 					IfNotExists().
 					Exec(ctx)
@@ -48,7 +48,7 @@ func Migrate(ctx context.Context, db *bun.DB) error {
 			},
 		},
 		migrations.Migration{
-			Up: func(tx bun.Tx) error {
+			Up: func(ctx context.Context, tx bun.IDB) error {
 				_, err := tx.NewAddColumn().
 					Table("configs").
 					ColumnExpr("name varchar(255)").
@@ -59,5 +59,5 @@ func Migrate(ctx context.Context, db *bun.DB) error {
 		},
 	)
 
-	return migrator.Up(ctx, db)
+	return migrator.Up(ctx)
 }

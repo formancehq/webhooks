@@ -5,10 +5,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/formancehq/go-libs/service"
+	"github.com/formancehq/go-libs/v2/service"
 
-	"github.com/formancehq/go-libs/auth"
-	"github.com/formancehq/go-libs/logging"
+	"github.com/formancehq/go-libs/v2/auth"
+	"github.com/formancehq/go-libs/v2/logging"
 	"github.com/formancehq/webhooks/pkg/storage"
 )
 

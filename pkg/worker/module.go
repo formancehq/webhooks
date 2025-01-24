@@ -11,15 +11,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/formancehq/go-libs/contextutil"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/alitto/pond"
-	"github.com/formancehq/go-libs/logging"
-	"github.com/formancehq/go-libs/publish"
+	"github.com/formancehq/go-libs/v2/logging"
+	"github.com/formancehq/go-libs/v2/publish"
 	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/formancehq/webhooks/pkg/storage"
 	"github.com/google/uuid"
@@ -110,7 +109,7 @@ func processMessages(store storage.Store, httpClient *http.Client, retryPolicy w
 					span.RecordError(err)
 				}
 			}()
-			ctx, _ = contextutil.Detached(ctx)
+			ctx, _ = context.WithCancel(ctx)
 
 			eventApp := strings.ToLower(ev.App)
 			eventType := strings.ToLower(ev.Type)

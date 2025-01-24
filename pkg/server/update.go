@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/formancehq/go-libs/logging"
+	"github.com/formancehq/go-libs/v2/logging"
 	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/formancehq/webhooks/pkg/server/apierrors"
 	"github.com/formancehq/webhooks/pkg/storage"

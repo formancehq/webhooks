@@ -1,17 +1,18 @@
 package cmd
 
 import (
-	"github.com/formancehq/go-libs/aws/iam"
-	"github.com/formancehq/go-libs/otlp/otlptraces"
-	"github.com/formancehq/go-libs/publish"
+	"github.com/formancehq/go-libs/v2/aws/iam"
+	"github.com/formancehq/go-libs/v2/otlp"
+	"github.com/formancehq/go-libs/v2/otlp/otlptraces"
+	"github.com/formancehq/go-libs/v2/publish"
 
-	"github.com/formancehq/go-libs/auth"
-	"github.com/formancehq/go-libs/bun/bunconnect"
-	"github.com/formancehq/go-libs/licence"
-	"github.com/formancehq/go-libs/service"
+	"github.com/formancehq/go-libs/v2/auth"
+	"github.com/formancehq/go-libs/v2/bun/bunconnect"
+	"github.com/formancehq/go-libs/v2/licence"
+	"github.com/formancehq/go-libs/v2/service"
 	"github.com/formancehq/webhooks/cmd/flag"
 	"github.com/formancehq/webhooks/pkg/backoff"
-	"github.com/formancehq/webhooks/pkg/otlp"
+	innerotlp "github.com/formancehq/webhooks/pkg/otlp"
 	"github.com/formancehq/webhooks/pkg/server"
 	"github.com/formancehq/webhooks/pkg/storage/postgres"
 	"github.com/formancehq/webhooks/pkg/worker"
@@ -27,6 +28,7 @@ func newServeCommand() *cobra.Command {
 		RunE:    serve,
 		PreRunE: handleAutoMigrate,
 	}
+	otlp.AddFlags(ret.Flags())
 	otlptraces.AddFlags(ret.Flags())
 	publish.AddFlags(ServiceName, ret.Flags())
 	auth.AddFlags(ret.Flags())
@@ -54,7 +56,7 @@ func serve(cmd *cobra.Command, _ []string) error {
 		}),
 		auth.FXModuleFromFlags(cmd),
 		postgres.NewModule(*connectionOptions, service.IsDebug(cmd)),
-		otlp.HttpClientModule(),
+		innerotlp.HttpClientModule(),
 		server.FXModuleFromFlags(cmd, listen, service.IsDebug(cmd)),
 		licence.FXModuleFromFlags(cmd, ServiceName),
 	}

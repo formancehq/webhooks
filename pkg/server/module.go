@@ -4,21 +4,26 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/formancehq/go-libs/v2/otlp"
+
 	"github.com/spf13/cobra"
 
-	"github.com/formancehq/go-libs/auth"
+	"github.com/formancehq/go-libs/v2/auth"
 	"github.com/formancehq/webhooks/pkg/storage"
 
-	"github.com/formancehq/go-libs/httpserver"
-	"github.com/formancehq/go-libs/logging"
-	"github.com/formancehq/go-libs/otlp/otlptraces"
+	"github.com/formancehq/go-libs/v2/httpserver"
+	"github.com/formancehq/go-libs/v2/logging"
+	"github.com/formancehq/go-libs/v2/otlp/otlptraces"
 	"go.uber.org/fx"
 )
 
 func FXModuleFromFlags(cmd *cobra.Command, addr string, debug bool) fx.Option {
 	var options []fx.Option
 
-	options = append(options, otlptraces.FXModuleFromFlags(cmd))
+	options = append(options,
+		otlp.FXModuleFromFlags(cmd),
+		otlptraces.FXModuleFromFlags(cmd),
+	)
 
 	options = append(options, fx.Provide(
 		func(
