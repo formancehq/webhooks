@@ -109,7 +109,7 @@ func processMessages(store storage.Store, httpClient *http.Client, retryPolicy w
 					span.RecordError(err)
 				}
 			}()
-			ctx, _ = context.WithCancel(ctx)
+			ctx = context.WithoutCancel(ctx)
 
 			eventApp := strings.ToLower(ev.App)
 			eventType := strings.ToLower(ev.Type)
