@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"github.com/uptrace/bun/dialect/pgdialect"
 	"time"
 
 	webhooks "github.com/formancehq/webhooks/pkg"
@@ -53,6 +54,20 @@ func (s Store) InsertOneConfig(ctx context.Context, cfgUser webhooks.ConfigUser)
 	}
 
 	return cfg, nil
+}
+
+func (s Store) UpdateOneConfig(ctx context.Context, id string, cfgUser webhooks.ConfigUser) error {
+	if _, err := s.db.NewUpdate().
+		Model(&webhooks.Config{}).
+		Where("id = ?", id).
+		Set("endpoint = ?", cfgUser.Endpoint).
+		Set("secret = ?", cfgUser.Secret).
+		Set("event_types = ?", pgdialect.Array(cfgUser.EventTypes)).
+		Exec(ctx); err != nil {
+		return errors.Wrap(err, "updating config")
+	}
+
+	return nil
 }
 
 func (s Store) DeleteOneConfig(ctx context.Context, id string) error {

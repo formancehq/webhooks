@@ -66,6 +66,7 @@ func newServerHandler(
 		r.Get(PathConfigs, h.getManyConfigsHandle)
 		r.Post(PathConfigs, h.insertOneConfigHandle)
 		r.Delete(PathConfigs+PathId, h.deleteOneConfigHandle)
+		r.Put(PathConfigs+PathId, h.updateOneConfigHandle)
 		r.Get(PathConfigs+PathId+PathTest, h.testOneConfigHandle)
 		r.Put(PathConfigs+PathId+PathActivate, h.activateOneConfigHandle)
 		r.Put(PathConfigs+PathId+PathDeactivate, h.deactivateOneConfigHandle)

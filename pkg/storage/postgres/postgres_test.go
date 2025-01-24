@@ -58,3 +58,55 @@ func TestStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(atts))
 }
+
+func TestConfigsInsert(t *testing.T) {
+	hooks := make([]bun.QueryHook, 0)
+	if testing.Verbose() {
+		hooks = append(hooks, bundebug.NewQueryHook())
+	}
+
+	pgDB := srv.NewDatabase(t)
+	db, err := bunconnect.OpenSQLDB(logging.TestingContext(), bunconnect.ConnectionOptions{
+		DatabaseSourceName: pgDB.ConnString(),
+	}, hooks...)
+	require.NoError(t, err)
+	defer func() {
+		_ = db.Close()
+	}()
+
+	require.NoError(t, db.Ping())
+	require.NoError(t, storage.Migrate(context.Background(), db))
+
+	store, err := postgres.NewStore(db)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = store.Close(context.Background())
+	})
+
+	cfgUser := webhooks.ConfigUser{
+		Endpoint:   "http://localhost:8080",
+		Secret:     "foo",
+		EventTypes: []string{"A", "B"},
+	}
+	cfg, err := store.InsertOneConfig(context.Background(), cfgUser)
+	require.NoError(t, err)
+
+	cfgs, err := store.FindManyConfigs(context.Background(), map[string]any{
+		"event_types": "A",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(cfgs))
+
+	err = store.UpdateOneConfig(context.Background(), cfg.ID, webhooks.ConfigUser{
+		Endpoint:   "http://localhost:8080",
+		Secret:     "foo",
+		EventTypes: []string{"B"},
+	})
+	require.NoError(t, err)
+
+	cfgs, err = store.FindManyConfigs(context.Background(), map[string]any{
+		"event_types": "A",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 0, len(cfgs))
+}
