@@ -1,13 +1,14 @@
 package server
 
 import (
+	"net/http"
+
 	"github.com/formancehq/go-libs/logging"
 	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/formancehq/webhooks/pkg/server/apierrors"
 	"github.com/formancehq/webhooks/pkg/storage"
 	"github.com/go-chi/chi/v5"
 	"github.com/pkg/errors"
-	"net/http"
 )
 
 func (h *serverHandler) updateOneConfigHandle(w http.ResponseWriter, r *http.Request) {
