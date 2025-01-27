@@ -2,7 +2,12 @@ openapi: 3.0.3
 info:
   title: Webhooks
   version: WEBHOOKS_VERSION
+servers:
+  - url: http://localhost:8080/
 paths:
+  x-speakeasy-errors:
+    statusCodes:
+      - default
   /configs:
     get:
       summary: Get many configs
@@ -125,6 +130,12 @@ paths:
           schema:
             type: string
             example: 4997257d-dfb6-445b-929c-cbe2ab182818
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigUser'
+        required: true
       responses:
         '200':
           description: Config successfully updated.
@@ -278,6 +289,14 @@ paths:
         - Authorization:
             - webhooks:write
 components:
+  securitySchemes:
+    Authorization:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: '/oauth/token'
+          refreshUrl: '/oauth/token'
+          scopes: {}
   schemas:
     ConfigUser:
       type: object
