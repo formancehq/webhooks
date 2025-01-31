@@ -2,11 +2,13 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/formancehq/go-libs/v2/logging"
+	"github.com/formancehq/go-libs/v2/publish"
 	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/formancehq/webhooks/pkg/storage"
 	"github.com/google/uuid"
@@ -103,9 +105,16 @@ func (w *Retrier) attemptRetries(ctx context.Context, errChan chan error) {
 					continue
 				}
 
+				var ev publish.EventMessage
+				err = json.Unmarshal([]byte(atts[0].Payload), &ev)
+				if err != nil {
+					errChan <- errors.Wrap(err, "json.Unmarshal")
+					continue
+				}
+
 				newAttemptNb := atts[0].RetryAttempt + 1
 				attempt, err := webhooks.MakeAttempt(ctx, w.httpClient, w.retryPolicy, uuid.NewString(),
-					webhookID, newAttemptNb, atts[0].Config, []byte(atts[0].Payload), false)
+					webhookID, newAttemptNb, atts[0].Config, ev.IdempotencyKey, []byte(atts[0].Payload), false)
 				if err != nil {
 					errChan <- errors.Wrap(err, "webhooks.MakeAttempt")
 					continue
