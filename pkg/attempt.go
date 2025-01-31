@@ -35,7 +35,7 @@ type Attempt struct {
 	NextRetryAfter time.Time `json:"nextRetryAfter,omitempty" bun:"next_retry_after,nullzero"`
 }
 
-func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy BackoffPolicy, id, webhookID string, attemptNb int, cfg Config, payload []byte, isTest bool) (Attempt, error) {
+func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy BackoffPolicy, id, webhookID string, attemptNb int, cfg Config, idempotencyKey string, payload []byte, isTest bool) (Attempt, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.Endpoint, bytes.NewBuffer(payload))
 	if err != nil {
 		return Attempt{}, errors.Wrap(err, "http.NewRequestWithContext")
@@ -54,6 +54,9 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy Backo
 	req.Header.Set("formance-webhook-timestamp", fmt.Sprintf("%d", timestamp))
 	req.Header.Set("formance-webhook-signature", signature)
 	req.Header.Set("formance-webhook-test", fmt.Sprintf("%v", isTest))
+	if idempotencyKey != "" {
+		req.Header.Set("formance-webhook-idempotency-key", idempotencyKey)
+	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {

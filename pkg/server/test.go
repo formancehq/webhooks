@@ -27,7 +27,7 @@ func (h *serverHandler) testOneConfigHandle(w http.ResponseWriter, r *http.Reque
 		logging.FromContext(r.Context()).Debugf("GET %s/%s%s", PathConfigs, id, PathTest)
 		retryPolicy := backoff.NewNoRetry()
 		attempt, err := webhooks.MakeAttempt(r.Context(), h.httpClient, retryPolicy, uuid.NewString(),
-			uuid.NewString(), 0, cfgs[0], []byte(`{"data":"test"}`), true)
+			uuid.NewString(), 0, cfgs[0], "ik", []byte(`{"data":"test"}`), true)
 		if err != nil {
 			logging.FromContext(r.Context()).Errorf("GET %s/%s%s: %s", PathConfigs, id, PathTest, err)
 			apierrors.ResponseError(w, r, err)

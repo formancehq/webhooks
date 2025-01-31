@@ -84,7 +84,6 @@ func configureMessageRouter(r *message.Router, subscriber message.Subscriber, to
 func processMessages(store storage.Store, httpClient *http.Client, retryPolicy webhooks.BackoffPolicy, pool *pond.WorkerPool) func(msg *message.Message) error {
 	return func(msg *message.Message) error {
 		pool.Submit(func() {
-
 			var ev *publish.EventMessage
 			span, ev, err := publish.UnmarshalMessage(msg)
 			if err != nil {
@@ -131,16 +130,16 @@ func processMessages(store storage.Store, httpClient *http.Client, retryPolicy w
 				return
 			}
 
+			data, err := json.Marshal(ev)
+			if err != nil {
+				logging.FromContext(ctx).Error(err)
+				return
+			}
 			for _, cfg := range cfgs {
 				logging.FromContext(ctx).Debugf("found one config: %+v", cfg)
-				data, err := json.Marshal(ev)
-				if err != nil {
-					logging.FromContext(ctx).Error(err)
-					return
-				}
 
 				attempt, err := webhooks.MakeAttempt(ctx, httpClient, retryPolicy, uuid.NewString(),
-					uuid.NewString(), 0, cfg, data, false)
+					uuid.NewString(), 0, cfg, ev.IdempotencyKey, data, false)
 				if err != nil {
 					logging.FromContext(ctx).Error(err)
 					return
