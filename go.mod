@@ -7,7 +7,7 @@ toolchain go1.22.7
 replace github.com/formancehq/webhooks/pkg/client => ./pkg/client
 
 require (
-	github.com/ThreeDotsLabs/watermill v1.4.4
+	github.com/ThreeDotsLabs/watermill v1.4.6
 	github.com/alitto/pond v1.9.2
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/formancehq/go-libs/v2 v2.0.1-0.20250123195330-84e3c46534d9
