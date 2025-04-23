@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/formancehq/go-libs/v2/bun/bunconnect"
-	"github.com/formancehq/go-libs/v2/publish"
-	"github.com/formancehq/webhooks/cmd"
-	"github.com/formancehq/webhooks/cmd/flag"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/formancehq/go-libs/v2/bun/bunconnect"
+	"github.com/formancehq/go-libs/v2/publish"
+	"github.com/formancehq/webhooks/cmd"
+	"github.com/formancehq/webhooks/cmd/flag"
 
 	"github.com/formancehq/go-libs/v2/httpclient"
 	"github.com/formancehq/go-libs/v2/httpserver"
@@ -37,14 +38,14 @@ type OTLPConfig struct {
 }
 
 type Configuration struct {
-	Postgres bunconnect.ConnectionOptions
-	Topics   []string
-	Debug    bool
-	Output   io.Writer
-	NatsURL  string
-	RetryPeriod time.Duration
+	Postgres        bunconnect.ConnectionOptions
+	Topics          []string
+	Debug           bool
+	Output          io.Writer
+	NatsURL         string
+	RetryPeriod     time.Duration
 	MinBackoffDelay time.Duration
-	AbortAfter time.Duration
+	AbortAfter      time.Duration
 }
 
 type Logger interface {
