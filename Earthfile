@@ -4,17 +4,28 @@ IMPORT github.com/formancehq/earthly:tags/v0.16.3 AS core
 
 FROM core+base-image
 
+CACHE --sharing=shared --id go-webhooks-cache /go/pkg/mod
+CACHE --sharing=shared --id go-webhooks-cache /root/.cache/go-build
+
 sources:
     FROM core+builder-image
+
+    CACHE --id go-webhooks-cache /go/pkg/mod
+    CACHE --id go-webhooks-cache /root/.cache/go-build
+
     WORKDIR /src
     COPY go.mod go.sum ./
-    RUN go mod download
     COPY --dir pkg cmd .
     COPY main.go .
+    RUN go mod download
     SAVE ARTIFACT /src
 
 compile:
     FROM core+builder-image
+    
+    CACHE --id go-webhooks-cache /go/pkg/mod
+    CACHE --id go-webhooks-cache /root/.cache/go-build
+
     COPY (+sources/*) /src
     WORKDIR /src
     ARG VERSION=latest
