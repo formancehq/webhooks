@@ -1,7 +1,9 @@
 package testserver
 
 import (
+	//nolint:staticcheck
 	. "github.com/formancehq/go-libs/v2/testing/utils"
+	//nolint:staticcheck
 	. "github.com/onsi/ginkgo/v2"
 )
 
