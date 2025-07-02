@@ -45,21 +45,21 @@ func newServerHandler(
 		httpClient: httpClient,
 	}
 
-	h.Mux.Use(func(handler http.Handler) http.Handler {
+	h.Use(func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			handler.ServeHTTP(w, r)
 		})
 	})
-	h.Mux.Use(func(handler http.Handler) http.Handler {
+	h.Use(func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			handler.ServeHTTP(w, r.WithContext(logging.ContextWithLogger(r.Context(), logger)))
 		})
 	})
-	h.Mux.Get(PathHealthCheck, h.HealthCheckHandle)
-	h.Mux.Get(PathInfo, h.getInfo(info))
+	h.Get(PathHealthCheck, h.HealthCheckHandle)
+	h.Get(PathInfo, h.getInfo(info))
 
-	h.Mux.Group(func(r chi.Router) {
+	h.Group(func(r chi.Router) {
 		r.Use(auth.Middleware(authenticator))
 		r.Use(service.OTLPMiddleware("webhooks", debug))
 
