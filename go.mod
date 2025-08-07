@@ -2,7 +2,7 @@ module github.com/formancehq/webhooks
 
 go 1.23.0
 
-toolchain go1.24.5
+toolchain go1.24.6
 
 replace github.com/formancehq/webhooks/pkg/client => ./pkg/client
 
