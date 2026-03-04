@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -36,11 +35,10 @@ func NewRetrier(store storage.Store, httpClient *http.Client, retriesCron time.D
 }
 
 func (w *Retrier) Run(ctx context.Context) error {
-	errChan := make(chan error)
 	ctxWithCancel, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	go w.attemptRetries(ctxWithCancel, errChan)
+	go w.attemptRetries(ctxWithCancel)
 
 	for {
 		select {
@@ -51,8 +49,6 @@ func (w *Retrier) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			logging.FromContext(ctx).Debugf("worker: context done: %s", ctx.Err())
 			return nil
-		case err := <-errChan:
-			return errors.Wrap(err, "kafka.Retrier")
 		}
 	}
 }
@@ -78,7 +74,7 @@ func (w *Retrier) Stop(ctx context.Context) {
 
 var ErrNoAttemptsFound = errors.New("attemptRetries: no attempts found")
 
-func (w *Retrier) attemptRetries(ctx context.Context, errChan chan error) {
+func (w *Retrier) attemptRetries(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -87,7 +83,7 @@ func (w *Retrier) attemptRetries(ctx context.Context, errChan chan error) {
 			// Find all webhookIDs ready to be retried
 			webhookIDs, err := w.store.FindWebhookIDsToRetry(ctx)
 			if err != nil {
-				errChan <- errors.Wrap(err, "storage.Store.FindWebhookIDsToRetry")
+				logging.FromContext(ctx).Errorf("storage.Store.FindWebhookIDsToRetry: %s", err)
 				continue
 			} else {
 				logging.FromContext(ctx).Debugf(
@@ -97,18 +93,18 @@ func (w *Retrier) attemptRetries(ctx context.Context, errChan chan error) {
 			for _, webhookID := range webhookIDs {
 				atts, err := w.store.FindAttemptsToRetryByWebhookID(ctx, webhookID)
 				if err != nil {
-					errChan <- errors.Wrap(err, "storage.Store.FindAttemptsToRetryByWebhookID")
+					logging.FromContext(ctx).Errorf("storage.Store.FindAttemptsToRetryByWebhookID: %s", err)
 					continue
 				}
 				if len(atts) == 0 {
-					errChan <- fmt.Errorf("%w for webhookID: %s", ErrNoAttemptsFound, webhookID)
+					logging.FromContext(ctx).Errorf("%s for webhookID: %s", ErrNoAttemptsFound, webhookID)
 					continue
 				}
 
 				var ev publish.EventMessage
 				err = json.Unmarshal([]byte(atts[0].Payload), &ev)
 				if err != nil {
-					errChan <- errors.Wrap(err, "json.Unmarshal")
+					logging.FromContext(ctx).Errorf("json.Unmarshal: %s", err)
 					continue
 				}
 
@@ -116,12 +112,12 @@ func (w *Retrier) attemptRetries(ctx context.Context, errChan chan error) {
 				attempt, err := webhooks.MakeAttempt(ctx, w.httpClient, w.retryPolicy, uuid.NewString(),
 					webhookID, newAttemptNb, atts[0].Config, ev.IdempotencyKey, []byte(atts[0].Payload), false)
 				if err != nil {
-					errChan <- errors.Wrap(err, "webhooks.MakeAttempt")
+					logging.FromContext(ctx).Errorf("webhooks.MakeAttempt: %s", err)
 					continue
 				}
 
 				if err := w.store.InsertOneAttempt(ctx, attempt); err != nil {
-					errChan <- errors.Wrap(err, "storage.Store.InsertOneAttempt retried")
+					logging.FromContext(ctx).Errorf("storage.Store.InsertOneAttempt retried: %s", err)
 					continue
 				}
 
@@ -129,7 +125,7 @@ func (w *Retrier) attemptRetries(ctx context.Context, errChan chan error) {
 					if errors.Is(err, storage.ErrAttemptsNotModified) {
 						continue
 					}
-					errChan <- errors.Wrap(err, "storage.Store.UpdateAttemptsStatus")
+					logging.FromContext(ctx).Errorf("storage.Store.UpdateAttemptsStatus: %s", err)
 					continue
 				}
 			}
