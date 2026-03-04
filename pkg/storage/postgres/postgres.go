@@ -65,6 +65,7 @@ func (s Store) UpdateOneConfig(ctx context.Context, id string, cfgUser webhooks.
 		Set("endpoint = ?", cfgUser.Endpoint).
 		Set("secret = ?", cfgUser.Secret).
 		Set("event_types = ?", pgdialect.Array(cfgUser.EventTypes)).
+		Set("updated_at = ?", time.Now().UTC()).
 		Exec(ctx); err != nil {
 		return errors.Wrap(err, "updating config")
 	}
