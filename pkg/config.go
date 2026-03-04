@@ -47,7 +47,8 @@ var (
 )
 
 func (c *ConfigUser) Validate() error {
-	if u, err := url.Parse(c.Endpoint); err != nil || len(u.String()) == 0 {
+	u, err := url.Parse(c.Endpoint)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return ErrInvalidEndpoint
 	}
 
