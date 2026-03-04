@@ -100,10 +100,9 @@ func TestBug4_UpdateOneConfigNoExistenceCheck(t *testing.T) {
 		EventTypes: []string{"test.event"},
 	})
 
-	// BUG: err is nil even though the config doesn't exist
-	assert.NoError(t, err,
-		"BUG CONFIRMED: UpdateOneConfig returns nil for non-existent ID. "+
-			"Should return storage.ErrConfigNotFound")
+	// Should return ErrConfigNotFound for non-existent ID
+	assert.ErrorIs(t, err, storage.ErrConfigNotFound,
+		"UpdateOneConfig should return ErrConfigNotFound for non-existent ID")
 }
 
 // BUG 11: UpdateAttemptsStatus updates ALL attempts for a webhookID.

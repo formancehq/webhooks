@@ -59,15 +59,24 @@ func (s Store) InsertOneConfig(ctx context.Context, cfgUser webhooks.ConfigUser)
 }
 
 func (s Store) UpdateOneConfig(ctx context.Context, id string, cfgUser webhooks.ConfigUser) error {
-	if _, err := s.db.NewUpdate().
+	res, err := s.db.NewUpdate().
 		Model(&webhooks.Config{}).
 		Where("id = ?", id).
 		Set("endpoint = ?", cfgUser.Endpoint).
 		Set("secret = ?", cfgUser.Secret).
 		Set("event_types = ?", pgdialect.Array(cfgUser.EventTypes)).
 		Set("updated_at = ?", time.Now().UTC()).
-		Exec(ctx); err != nil {
+		Exec(ctx)
+	if err != nil {
 		return errors.Wrap(err, "updating config")
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return errors.Wrap(err, "getting rows affected")
+	}
+	if rowsAffected == 0 {
+		return storage.ErrConfigNotFound
 	}
 
 	return nil
