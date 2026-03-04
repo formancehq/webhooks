@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -54,11 +55,11 @@ func (m *mockStore) UpdateOneConfig(ctx context.Context, id string, cfg webhooks
 // TestBug12_WorkerSurvivesTransientErrors verifies that the worker
 // continues running after transient errors instead of terminating.
 func TestBug12_WorkerSurvivesTransientErrors(t *testing.T) {
-	callCount := 0
+	var callCount int32
 	store := &mockStore{
 		findWebhookIDsToRetryFn: func(ctx context.Context) ([]string, error) {
-			callCount++
-			if callCount == 1 {
+			count := atomic.AddInt32(&callCount, 1)
+			if count == 1 {
 				return nil, errors.New("temporary connection error")
 			}
 			return nil, nil
@@ -76,6 +77,6 @@ func TestBug12_WorkerSurvivesTransientErrors(t *testing.T) {
 
 	// Worker should NOT return an error — it should survive and exit via context cancellation
 	assert.NoError(t, runErr, "worker should survive transient errors")
-	assert.Greater(t, callCount, 1,
+	assert.Greater(t, atomic.LoadInt32(&callCount), int32(1),
 		"worker should have called FindWebhookIDsToRetry more than once (survived the error)")
 }

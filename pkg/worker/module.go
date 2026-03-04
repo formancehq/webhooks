@@ -96,7 +96,7 @@ func processMessages(store storage.Store, httpClient *http.Client, retryPolicy w
 				attribute.String("event-id", msg.UUID),
 				attribute.Bool("duplicate", false),
 				attribute.String("event-type", ev.Type),
-				attribute.String("event-payload", string(msg.Payload)),
+				attribute.Int("event-payload-bytes", len(msg.Payload)),
 			),
 		)
 		defer span.End()
@@ -130,7 +130,10 @@ func processMessages(store storage.Store, httpClient *http.Client, retryPolicy w
 			return fmt.Errorf("json.Marshal: %w", err)
 		}
 		for _, cfg := range cfgs {
-			logging.FromContext(ctx).Debugf("found one config: %+v", cfg)
+			logging.FromContext(ctx).Debugf(
+				"found one config id=%s endpoint=%s event_types=%d",
+				cfg.ID, cfg.Endpoint, len(cfg.EventTypes),
+			)
 
 			attempt, err := webhooks.MakeAttempt(ctx, httpClient, retryPolicy, uuid.NewString(),
 				uuid.NewString(), 0, cfg, ev.IdempotencyKey, data, false)
