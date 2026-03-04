@@ -75,62 +75,66 @@ func (w *Retrier) Stop(ctx context.Context) {
 var ErrNoAttemptsFound = errors.New("attemptRetries: no attempts found")
 
 func (w *Retrier) attemptRetries(ctx context.Context) {
+	ticker := time.NewTicker(w.retriesCron)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		default:
-			// Find all webhookIDs ready to be retried
-			webhookIDs, err := w.store.FindWebhookIDsToRetry(ctx)
-			if err != nil {
-				logging.FromContext(ctx).Errorf("storage.Store.FindWebhookIDsToRetry: %s", err)
-				continue
-			} else {
-				logging.FromContext(ctx).Debugf(
-					"found %d distinct webhookIDs to retry: %+v", len(webhookIDs), webhookIDs)
-			}
+		case <-ticker.C:
+			w.processRetries(ctx)
+		}
+	}
+}
 
-			for _, webhookID := range webhookIDs {
-				atts, err := w.store.FindAttemptsToRetryByWebhookID(ctx, webhookID)
-				if err != nil {
-					logging.FromContext(ctx).Errorf("storage.Store.FindAttemptsToRetryByWebhookID: %s", err)
-					continue
-				}
-				if len(atts) == 0 {
-					logging.FromContext(ctx).Errorf("%s for webhookID: %s", ErrNoAttemptsFound, webhookID)
-					continue
-				}
+func (w *Retrier) processRetries(ctx context.Context) {
+	webhookIDs, err := w.store.FindWebhookIDsToRetry(ctx)
+	if err != nil {
+		logging.FromContext(ctx).Errorf("storage.Store.FindWebhookIDsToRetry: %s", err)
+		return
+	}
 
-				var ev publish.EventMessage
-				err = json.Unmarshal([]byte(atts[0].Payload), &ev)
-				if err != nil {
-					logging.FromContext(ctx).Errorf("json.Unmarshal: %s", err)
-					continue
-				}
+	logging.FromContext(ctx).Debugf(
+		"found %d distinct webhookIDs to retry: %+v", len(webhookIDs), webhookIDs)
 
-				newAttemptNb := atts[0].RetryAttempt + 1
-				attempt, err := webhooks.MakeAttempt(ctx, w.httpClient, w.retryPolicy, uuid.NewString(),
-					webhookID, newAttemptNb, atts[0].Config, ev.IdempotencyKey, []byte(atts[0].Payload), false)
-				if err != nil {
-					logging.FromContext(ctx).Errorf("webhooks.MakeAttempt: %s", err)
-					continue
-				}
-
-				if err := w.store.InsertOneAttempt(ctx, attempt); err != nil {
-					logging.FromContext(ctx).Errorf("storage.Store.InsertOneAttempt retried: %s", err)
-					continue
-				}
-
-				if _, err := w.store.UpdateAttemptsStatus(ctx, webhookID, attempt.Status); err != nil {
-					if errors.Is(err, storage.ErrAttemptsNotModified) {
-						continue
-					}
-					logging.FromContext(ctx).Errorf("storage.Store.UpdateAttemptsStatus: %s", err)
-					continue
-				}
-			}
+	for _, webhookID := range webhookIDs {
+		atts, err := w.store.FindAttemptsToRetryByWebhookID(ctx, webhookID)
+		if err != nil {
+			logging.FromContext(ctx).Errorf("storage.Store.FindAttemptsToRetryByWebhookID: %s", err)
+			continue
+		}
+		if len(atts) == 0 {
+			logging.FromContext(ctx).Errorf("%s for webhookID: %s", ErrNoAttemptsFound, webhookID)
+			continue
 		}
 
-		time.Sleep(w.retriesCron)
+		var ev publish.EventMessage
+		err = json.Unmarshal([]byte(atts[0].Payload), &ev)
+		if err != nil {
+			logging.FromContext(ctx).Errorf("json.Unmarshal: %s", err)
+			continue
+		}
+
+		newAttemptNb := atts[0].RetryAttempt + 1
+		attempt, err := webhooks.MakeAttempt(ctx, w.httpClient, w.retryPolicy, uuid.NewString(),
+			webhookID, newAttemptNb, atts[0].Config, ev.IdempotencyKey, []byte(atts[0].Payload), false)
+		if err != nil {
+			logging.FromContext(ctx).Errorf("webhooks.MakeAttempt: %s", err)
+			continue
+		}
+
+		if err := w.store.InsertOneAttempt(ctx, attempt); err != nil {
+			logging.FromContext(ctx).Errorf("storage.Store.InsertOneAttempt retried: %s", err)
+			continue
+		}
+
+		if _, err := w.store.UpdateAttemptsStatus(ctx, webhookID, attempt.Status); err != nil {
+			if errors.Is(err, storage.ErrAttemptsNotModified) {
+				continue
+			}
+			logging.FromContext(ctx).Errorf("storage.Store.UpdateAttemptsStatus: %s", err)
+			continue
+		}
 	}
 }

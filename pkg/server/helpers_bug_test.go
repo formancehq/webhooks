@@ -48,3 +48,45 @@ func TestBug1_ValidContentTypeAllowsParsing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "test", dst.Name)
 }
+
+// TestBug1_ContentTypeWithCharset verifies that charset parameter is accepted.
+func TestBug1_ContentTypeWithCharset(t *testing.T) {
+	type testPayload struct {
+		Name string `json:"name"`
+	}
+
+	body := []byte(`{"name":"test"}`)
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	var dst testPayload
+	err := decodeJSONBody(req, &dst, false)
+
+	require.NoError(t, err)
+	assert.Equal(t, "test", dst.Name)
+}
+
+// TestBug1_AllowEmptyWithoutContentType verifies that allowEmpty=true
+// does not require Content-Type header when body is empty.
+func TestBug1_AllowEmptyWithoutContentType(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	// No Content-Type header set
+
+	var dst struct{ Name string }
+	err := decodeJSONBody(req, &dst, true)
+
+	assert.NoError(t, err, "allowEmpty=true should not require Content-Type")
+}
+
+// TestBug1_RequireContentTypeWhenNotAllowEmpty verifies that allowEmpty=false
+// requires Content-Type header.
+func TestBug1_RequireContentTypeWhenNotAllowEmpty(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	// No Content-Type header set
+
+	var dst struct{ Name string }
+	err := decodeJSONBody(req, &dst, false)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Content-Type")
+}

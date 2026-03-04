@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strings"
 
@@ -12,7 +13,14 @@ import (
 )
 
 func decodeJSONBody(r *http.Request, dst interface{}, allowEmpty bool) error {
-	if r.Header.Get("Content-Type") != "application/json" {
+	ct := r.Header.Get("Content-Type")
+	if ct != "" {
+		mediaType, _, err := mime.ParseMediaType(ct)
+		if err != nil || mediaType != "application/json" {
+			msg := "Content-Type header should be application/json"
+			return &apierrors.ValidationError{Msg: msg}
+		}
+	} else if !allowEmpty {
 		msg := "Content-Type header should be application/json"
 		return &apierrors.ValidationError{Msg: msg}
 	}
