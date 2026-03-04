@@ -200,8 +200,8 @@ func (s Store) UpdateAttemptsStatus(ctx context.Context, webhookID, status strin
 		return []webhooks.Attempt{}, errors.Wrap(err, "updating attempts status")
 	}
 
-	for _, att := range atts {
-		att.Status = status
+	for i := range atts {
+		atts[i].Status = status
 	}
 
 	return atts, nil
