@@ -12,6 +12,11 @@ import (
 )
 
 func decodeJSONBody(r *http.Request, dst interface{}, allowEmpty bool) error {
+	if r.Header.Get("Content-Type") != "application/json" {
+		msg := "Content-Type header should be application/json"
+		return &apierrors.ValidationError{Msg: msg}
+	}
+
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 
@@ -51,11 +56,6 @@ func decodeJSONBody(r *http.Request, dst interface{}, allowEmpty bool) error {
 
 	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		msg := "Request body must only contain a single JSON object"
-		return &apierrors.ValidationError{Msg: msg}
-	}
-
-	if r.Header.Get("Content-Type") != "application/json" {
-		msg := "Content-Type header should be application/json"
 		return &apierrors.ValidationError{Msg: msg}
 	}
 
