@@ -16,7 +16,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/ThreeDotsLabs/watermill/message"
-	"github.com/alitto/pond"
 	"github.com/formancehq/go-libs/v2/logging"
 	"github.com/formancehq/go-libs/v2/publish"
 	webhooks "github.com/formancehq/webhooks/pkg"
@@ -31,7 +30,7 @@ func StartModule(cmd *cobra.Command, retriesCron time.Duration, retryPolicy webh
 	var options []fx.Option
 
 	options = append(options, fx.Invoke(func(r *message.Router, subscriber message.Subscriber, store storage.Store, httpClient *http.Client) {
-		configureMessageRouter(r, subscriber, topics, store, httpClient, retryPolicy, pond.New(50, 50))
+		configureMessageRouter(r, subscriber, topics, store, httpClient, retryPolicy)
 	}))
 	options = append(options, publish.FXModuleFromFlags(cmd, debug))
 	options = append(options, fx.Provide(
@@ -74,89 +73,82 @@ func run(lc fx.Lifecycle, w *Retrier) {
 }
 
 func configureMessageRouter(r *message.Router, subscriber message.Subscriber, topics []string,
-	store storage.Store, httpClient *http.Client, retryPolicy webhooks.BackoffPolicy, pool *pond.WorkerPool,
+	store storage.Store, httpClient *http.Client, retryPolicy webhooks.BackoffPolicy,
 ) {
 	for _, topic := range topics {
-		r.AddNoPublisherHandler(fmt.Sprintf("messages-%s", topic), topic, subscriber, processMessages(store, httpClient, retryPolicy, pool))
+		r.AddNoPublisherHandler(fmt.Sprintf("messages-%s", topic), topic, subscriber, processMessages(store, httpClient, retryPolicy))
 	}
 }
 
-func processMessages(store storage.Store, httpClient *http.Client, retryPolicy webhooks.BackoffPolicy, pool *pond.WorkerPool) func(msg *message.Message) error {
+func processMessages(store storage.Store, httpClient *http.Client, retryPolicy webhooks.BackoffPolicy) func(msg *message.Message) error {
 	return func(msg *message.Message) error {
-		pool.Submit(func() {
-			var ev *publish.EventMessage
-			span, ev, err := publish.UnmarshalMessage(msg)
+		var ev *publish.EventMessage
+		span, ev, err := publish.UnmarshalMessage(msg)
+		if err != nil {
+			return fmt.Errorf("publish.UnmarshalMessage: %w", err)
+		}
+
+		ctx, span := Tracer.Start(msg.Context(), "HandleEvent",
+			trace.WithLinks(trace.Link{
+				SpanContext: span.SpanContext(),
+			}),
+			trace.WithAttributes(
+				attribute.String("event-id", msg.UUID),
+				attribute.Bool("duplicate", false),
+				attribute.String("event-type", ev.Type),
+				attribute.String("event-payload", string(msg.Payload)),
+			),
+		)
+		defer span.End()
+		defer func() {
 			if err != nil {
-				logging.FromContext(msg.Context()).Error(err.Error())
-				return
+				span.RecordError(err)
 			}
+		}()
 
-			ctx, span := Tracer.Start(msg.Context(), "HandleEvent",
-				trace.WithLinks(trace.Link{
-					SpanContext: span.SpanContext(),
-				}),
-				trace.WithAttributes(
-					attribute.String("event-id", msg.UUID),
-					attribute.Bool("duplicate", false),
-					attribute.String("event-type", ev.Type),
-					attribute.String("event-payload", string(msg.Payload)),
-				),
-			)
-			defer span.End()
-			defer func() {
-				if err != nil {
-					span.RecordError(err)
-				}
-			}()
-			ctx = context.WithoutCancel(ctx)
+		eventApp := strings.ToLower(ev.App)
+		eventType := strings.ToLower(ev.Type)
 
-			eventApp := strings.ToLower(ev.App)
-			eventType := strings.ToLower(ev.Type)
+		if eventApp == "" {
+			ev.Type = eventType
+		} else {
+			ev.Type = strings.Join([]string{eventApp, eventType}, ".")
+		}
 
-			if eventApp == "" {
-				ev.Type = eventType
-			} else {
-				ev.Type = strings.Join([]string{eventApp, eventType}, ".")
-			}
+		filter := map[string]any{
+			"event_types": ev.Type,
+			"active":      true,
+		}
+		logging.FromContext(ctx).Debugf("searching configs with event types: %+v", ev.Type)
+		cfgs, err := store.FindManyConfigs(ctx, filter)
+		if err != nil {
+			return fmt.Errorf("store.FindManyConfigs: %w", err)
+		}
 
-			filter := map[string]any{
-				"event_types": ev.Type,
-				"active":      true,
-			}
-			logging.FromContext(ctx).Debugf("searching configs with event types: %+v", ev.Type)
-			cfgs, err := store.FindManyConfigs(ctx, filter)
+		data, err := json.Marshal(ev)
+		if err != nil {
+			return fmt.Errorf("json.Marshal: %w", err)
+		}
+		for _, cfg := range cfgs {
+			logging.FromContext(ctx).Debugf("found one config: %+v", cfg)
+
+			attempt, err := webhooks.MakeAttempt(ctx, httpClient, retryPolicy, uuid.NewString(),
+				uuid.NewString(), 0, cfg, ev.IdempotencyKey, data, false)
 			if err != nil {
-				logging.FromContext(ctx).Error(err)
-				return
+				return fmt.Errorf("webhooks.MakeAttempt: %w", err)
 			}
 
-			data, err := json.Marshal(ev)
-			if err != nil {
-				logging.FromContext(ctx).Error(err)
-				return
+			if attempt.Status == webhooks.StatusAttemptSuccess {
+				logging.FromContext(ctx).Debugf(
+					"webhook sent with ID %s to %s of type %s",
+					attempt.WebhookID, cfg.Endpoint, ev.Type)
 			}
-			for _, cfg := range cfgs {
-				logging.FromContext(ctx).Debugf("found one config: %+v", cfg)
 
-				attempt, err := webhooks.MakeAttempt(ctx, httpClient, retryPolicy, uuid.NewString(),
-					uuid.NewString(), 0, cfg, ev.IdempotencyKey, data, false)
-				if err != nil {
-					logging.FromContext(ctx).Error(err)
-					return
-				}
-
-				if attempt.Status == webhooks.StatusAttemptSuccess {
-					logging.FromContext(ctx).Debugf(
-						"webhook sent with ID %s to %s of type %s",
-						attempt.WebhookID, cfg.Endpoint, ev.Type)
-				}
-
-				if err := store.InsertOneAttempt(ctx, attempt); err != nil {
-					logging.FromContext(ctx).Error(err)
-					return
-				}
+			if err := store.InsertOneAttempt(ctx, attempt); err != nil {
+				return fmt.Errorf("store.InsertOneAttempt: %w", err)
 			}
-		})
+		}
+
 		return nil
 	}
 }
