@@ -105,20 +105,17 @@ func TestBug4_UpdateOneConfigNoExistenceCheck(t *testing.T) {
 		"UpdateOneConfig should return ErrConfigNotFound for non-existent ID")
 }
 
-// BUG 11: UpdateAttemptsStatus updates ALL attempts for a webhookID.
-// When a retry succeeds, ALL attempts for that webhookID are set to the same
-// status, including old historical attempts. This corrupts the attempt history.
-//
-// Expected: only "to retry" attempts should be updated.
-// Actual: ALL attempts are overwritten.
-func TestBug11_UpdateAttemptsStatusOverwritesAll(t *testing.T) {
+// TestBug11_UpdateAttemptsStatusOnlyUpdatesToRetry verifies that
+// UpdateAttemptsStatus only updates attempts with status "to retry",
+// leaving historical attempts (e.g. "success") untouched.
+func TestBug11_UpdateAttemptsStatusOnlyUpdatesToRetry(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
 
 	webhookID := "test-webhook-id"
 	cfg := webhooks.Config{
-		ID:       uuid.NewString(),
-		Active:   true,
+		ID:     uuid.NewString(),
+		Active: true,
 		ConfigUser: webhooks.ConfigUser{
 			Endpoint:   "http://localhost:8080",
 			Secret:     webhooks.NewSecret(),
@@ -126,21 +123,20 @@ func TestBug11_UpdateAttemptsStatusOverwritesAll(t *testing.T) {
 		},
 	}
 
-	// Insert first attempt as "to retry"
-	att1 := webhooks.Attempt{
-		ID:             uuid.NewString(),
-		WebhookID:      webhookID,
-		Config:         cfg,
-		Payload:        `{"test":true}`,
-		StatusCode:     500,
-		RetryAttempt:   0,
-		Status:         webhooks.StatusAttemptToRetry,
-		NextRetryAfter: time.Now().Add(-time.Hour),
+	// Insert a historical "success" attempt (should NOT be touched)
+	attSuccess := webhooks.Attempt{
+		ID:           uuid.NewString(),
+		WebhookID:    webhookID,
+		Config:       cfg,
+		Payload:      `{"test":true}`,
+		StatusCode:   200,
+		RetryAttempt: 0,
+		Status:       webhooks.StatusAttemptSuccess,
 	}
-	require.NoError(t, store.InsertOneAttempt(ctx, att1))
+	require.NoError(t, store.InsertOneAttempt(ctx, attSuccess))
 
-	// Insert second attempt as "to retry"
-	att2 := webhooks.Attempt{
+	// Insert a "to retry" attempt (should be updated)
+	attRetry := webhooks.Attempt{
 		ID:             uuid.NewString(),
 		WebhookID:      webhookID,
 		Config:         cfg,
@@ -150,23 +146,14 @@ func TestBug11_UpdateAttemptsStatusOverwritesAll(t *testing.T) {
 		Status:         webhooks.StatusAttemptToRetry,
 		NextRetryAfter: time.Now().Add(-time.Hour),
 	}
-	require.NoError(t, store.InsertOneAttempt(ctx, att2))
+	require.NoError(t, store.InsertOneAttempt(ctx, attRetry))
 
-	// Now update all attempts to "success"
+	// Update attempts status to "success" — only "to retry" should change
 	atts, err := store.UpdateAttemptsStatus(ctx, webhookID, webhooks.StatusAttemptSuccess)
 	require.NoError(t, err)
 
-	// BUG: ALL attempts are updated to "success", including old ones
-	// The returned slice should reflect the updated statuses,
-	// but due to BUG 2, the returned data has stale statuses.
-	_ = atts // returned atts have stale status due to BUG 2
-
-	// Verify via direct query that ALL attempts were updated
-	allAtts, err := store.FindAttemptsToRetryByWebhookID(ctx, webhookID)
-	require.NoError(t, err)
-
-	// Since we set all to "success", there should be 0 "to retry" attempts left
-	assert.Equal(t, 0, len(allAtts),
-		"BUG 11 CONFIRMED: ALL attempts were updated to 'success', "+
-			"not just the latest one. Historical data is corrupted.")
+	// Only the "to retry" attempt should be returned and updated
+	require.Len(t, atts, 1, "should only return the 'to retry' attempt")
+	assert.Equal(t, webhooks.StatusAttemptSuccess, atts[0].Status)
+	assert.Equal(t, attRetry.ID, atts[0].ID)
 }

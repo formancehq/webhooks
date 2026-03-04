@@ -186,7 +186,9 @@ func (s Store) FindWebhookIDsToRetry(ctx context.Context) ([]string, error) {
 func (s Store) UpdateAttemptsStatus(ctx context.Context, webhookID, status string) ([]webhooks.Attempt, error) {
 	atts := []webhooks.Attempt{}
 	if err := s.db.NewSelect().Model(&atts).
-		Where("webhook_id = ?", webhookID).Scan(ctx); err != nil {
+		Where("webhook_id = ?", webhookID).
+		Where("status = ?", webhooks.StatusAttemptToRetry).
+		Scan(ctx); err != nil {
 		return []webhooks.Attempt{}, errors.Wrap(err, "selecting attempts by webhook ID before updating status")
 	}
 	if len(atts) == 0 {
@@ -205,6 +207,7 @@ func (s Store) UpdateAttemptsStatus(ctx context.Context, webhookID, status strin
 
 	if _, err := s.db.NewUpdate().Model((*webhooks.Attempt)(nil)).
 		Where("webhook_id = ?", webhookID).
+		Where("status = ?", webhooks.StatusAttemptToRetry).
 		Set("status = ?", status).
 		Set("updated_at = ?", time.Now().UTC()).
 		Exec(ctx); err != nil {
