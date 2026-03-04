@@ -75,15 +75,19 @@ func (w *Retrier) Stop(ctx context.Context) {
 var ErrNoAttemptsFound = errors.New("attemptRetries: no attempts found")
 
 func (w *Retrier) attemptRetries(ctx context.Context) {
-	ticker := time.NewTicker(w.retriesCron)
-	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			w.processRetries(ctx)
+		default:
+		}
+
+		w.processRetries(ctx)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(w.retriesCron):
 		}
 	}
 }
