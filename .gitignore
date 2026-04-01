@@ -4,5 +4,7 @@
 webhooks
 coverage.out
 coverage.html
+coverage.txt
 vendor
 dist
+.bg-shell/

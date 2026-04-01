@@ -75,7 +75,7 @@ WITH to_claim AS (
 claimed AS (
     UPDATE attempts
     SET status = 'retrying', updated_at = NOW()
-    WHERE webhook_id IN (SELECT webhook_id FROM to_claim_limited)
+    WHERE webhook_id IN (SELECT webhook_id FROM to_claim)
       AND status = 'to retry'
     RETURNING webhook_id
 )
