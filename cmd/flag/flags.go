@@ -12,8 +12,9 @@ const (
 	Listen   = "listen"
 	Worker   = "worker"
 
-	RetryPeriod     = "retry-period"
-	AbortAfter      = "abort-after"
+	RetryPeriod    = "retry-period"
+	RetryBatchSize = "retry-batch-size"
+	AbortAfter     = "abort-after"
 	MinBackoffDelay = "min-backoff-delay"
 	MaxBackoffDelay = "max-backoff-delay"
 
@@ -30,7 +31,8 @@ const (
 )
 
 var (
-	DefaultRetryPeriod = time.Minute
+	DefaultRetryPeriod    = 3 * time.Second
+	DefaultRetryBatchSize = 50
 )
 
 func Init(flagSet *pflag.FlagSet) {
@@ -38,6 +40,7 @@ func Init(flagSet *pflag.FlagSet) {
 
 	flagSet.String(Listen, DefaultBindAddressServer, "server HTTP bind address")
 	flagSet.Duration(RetryPeriod, DefaultRetryPeriod, "worker retry period")
+	flagSet.Int(RetryBatchSize, DefaultRetryBatchSize, "number of webhook IDs to claim per retry tick")
 	flagSet.Bool(Worker, false, "Enable worker on server")
 
 	flagSet.StringSlice(KafkaTopics, []string{DefaultKafkaTopic}, "Kafka topics")

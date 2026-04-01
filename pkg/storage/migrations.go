@@ -57,6 +57,35 @@ func Migrate(ctx context.Context, db *bun.DB) error {
 				return errors.Wrap(err, "adding 'name' column")
 			},
 		},
+		migrations.Migration{
+			Name: "Add partial index for retry polling",
+			Up: func(ctx context.Context, tx bun.IDB) error {
+				_, err := tx.ExecContext(ctx, `
+					CREATE INDEX IF NOT EXISTS idx_attempts_retry_pending
+					ON attempts (next_retry_after)
+					WHERE status = 'to retry'
+				`)
+				if err != nil {
+					return errors.Wrap(err, "creating partial index for retry polling")
+				}
+
+				_, err = tx.ExecContext(ctx, `
+					CREATE INDEX IF NOT EXISTS idx_attempts_retrying
+					ON attempts (webhook_id)
+					WHERE status = 'retrying'
+				`)
+				if err != nil {
+					return errors.Wrap(err, "creating partial index for retrying status")
+				}
+
+				_, err = tx.ExecContext(ctx, `
+					CREATE INDEX IF NOT EXISTS idx_attempts_retrying_recovery
+					ON attempts (updated_at)
+					WHERE status = 'retrying'
+				`)
+				return errors.Wrap(err, "creating partial index for retrying recovery")
+			},
+		},
 	)
 
 	return migrator.Up(ctx)

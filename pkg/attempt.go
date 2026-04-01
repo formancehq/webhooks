@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	StatusAttemptSuccess = "success"
-	StatusAttemptToRetry = "to retry"
-	StatusAttemptFailed  = "failed"
+	StatusAttemptSuccess  = "success"
+	StatusAttemptToRetry  = "to retry"
+	StatusAttemptRetrying = "retrying"
+	StatusAttemptFailed   = "failed"
 )
 
 type Attempt struct {
