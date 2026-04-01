@@ -50,7 +50,7 @@ func TestStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(cfgs))
 
-	ids, err := store.FindWebhookIDsToRetry(context.Background())
+	ids, err := store.FindWebhookIDsToRetry(context.Background(), 50)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(ids))
 

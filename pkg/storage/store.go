@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"time"
 
 	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/pkg/errors"
@@ -21,7 +22,8 @@ type Store interface {
 	UpdateOneConfigActivation(ctx context.Context, id string, active bool) (webhooks.Config, error)
 	UpdateOneConfigSecret(ctx context.Context, id, secret string) (webhooks.Config, error)
 	FindAttemptsToRetryByWebhookID(ctx context.Context, webhookID string) ([]webhooks.Attempt, error)
-	FindWebhookIDsToRetry(ctx context.Context) (webhookIDs []string, err error)
+	FindWebhookIDsToRetry(ctx context.Context, limit int) (webhookIDs []string, err error)
+	RecoverStaleRetryingAttempts(ctx context.Context, staleDuration time.Duration) error
 	UpdateAttemptsStatus(ctx context.Context, webhookID string, status string) ([]webhooks.Attempt, error)
 	InsertOneAttempt(ctx context.Context, att webhooks.Attempt) error
 	Close(ctx context.Context) error

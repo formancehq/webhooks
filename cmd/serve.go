@@ -63,6 +63,7 @@ func serve(cmd *cobra.Command, _ []string) error {
 	isWorker, _ := cmd.Flags().GetBool(flag.Worker)
 	if isWorker {
 		retryPeriod, _ := cmd.Flags().GetDuration(flag.RetryPeriod)
+		retryBatchSize, _ := cmd.Flags().GetInt(flag.RetryBatchSize)
 		minBackOffDelay, _ := cmd.Flags().GetDuration(flag.MinBackoffDelay)
 		maxBackOffDelay, _ := cmd.Flags().GetDuration(flag.MaxBackoffDelay)
 		abortAfter, _ := cmd.Flags().GetDuration(flag.AbortAfter)
@@ -76,6 +77,7 @@ func serve(cmd *cobra.Command, _ []string) error {
 				maxBackOffDelay,
 				abortAfter,
 			),
+			retryBatchSize,
 			service.IsDebug(cmd),
 			topics,
 		))
