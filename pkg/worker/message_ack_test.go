@@ -35,10 +35,6 @@ func TestProcessMessages_SynchronousProcessing(t *testing.T) {
 		EventTypes: []string{"test.event"},
 	}
 
-	store := newMockStore(nil, nil)
-	// Insert a config so processMessages finds it
-	insertedCfg, err := store.InsertOneConfig(context.Background(), cfg)
-	_ = insertedCfg
 	// Use a store that returns configs for the right event type
 	configStore := &mockStoreWithConfigs{
 		mockStore: newMockStore(nil, nil),
