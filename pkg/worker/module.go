@@ -142,6 +142,10 @@ func processMessages(store storage.Store, httpClient *http.Client, retryPolicy w
 
 			if err := store.InsertOneAttempt(ctx, attempt); err != nil {
 				logging.FromContext(ctx).Errorf("insert attempt for config %s: %s", cfg.ID, err)
+				if attempt.Status != webhooks.StatusAttemptSuccess {
+					// Can't persist the retry record — nack so the broker redelivers
+					return fmt.Errorf("insert attempt for config %s: %w", cfg.ID, err)
+				}
 				continue
 			}
 		}

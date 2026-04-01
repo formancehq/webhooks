@@ -18,10 +18,9 @@ import (
 // does NOT contain os.Environ() calls that would dump all environment variables
 // (including secrets) to the logs.
 func TestNoEnvironmentDumping(t *testing.T) {
-	// Scan the source files that previously had the problem
 	filesToCheck := []string{
-		"module.go",                    // worker module
-		"../server/module.go",          // server module
+		"module.go",
+		"../server/module.go",
 	}
 
 	for _, relPath := range filesToCheck {
@@ -37,43 +36,30 @@ func TestNoEnvironmentDumping(t *testing.T) {
 }
 
 // TestNoConfigSecretInLogStatements verifies that log statements in module.go
-// do not use %+v or %v formatting on Config objects, which would expose secrets.
+// do not use %+v or %v formatting which would expose secrets in Config objects.
 func TestNoConfigSecretInLogStatements(t *testing.T) {
 	content, err := os.ReadFile("module.go")
 	require.NoError(t, err)
 
 	src := string(content)
 
-	// Check that no log line contains a config object dumped with %+v
-	assert.NotContains(t, src, `"%+v", cfg`,
-		"module.go should not log configs with %%+v — this exposes secrets")
-	assert.NotContains(t, src, `"%+v", c`,
-		"module.go should not log config objects with %%+v")
-}
-
-// TestConfigStringerDoesNotLeakSecret verifies that if Config implements
-// fmt.Stringer, it redacts the secret. If it doesn't implement Stringer,
-// we verify that %+v would leak the secret (documenting the risk).
-func TestConfigStringerDoesNotLeakSecret(t *testing.T) {
-	// This test documents the risk: fmt.Sprintf with %+v on a config leaks the secret
-	type configLike struct {
-		Endpoint string
-		Secret   string
-		ID       string
+	// Check common patterns that would leak secrets via struct formatting
+	dangerousPatterns := []string{
+		`"%+v", cfg`,
+		`"%+v", c`,
+		`"%+v", config`,
+		`"%+v", conf`,
+		`"%v", cfg`,
+		`"%v", c `,
+		`"%v", config`,
+		`"%v", conf`,
+		`found one config: %+v`,
+		`found one config: %v`,
 	}
 
-	cfg := configLike{
-		Endpoint: "https://example.com",
-		Secret:   "c3VwZXItc2VjcmV0LXZhbHVlLTEyMw==",
-		ID:       "cfg-123",
-	}
-
-	output := fmt.Sprintf("%+v", cfg)
-
-	// This proves the risk exists — %+v on any struct with a Secret field leaks it
-	if strings.Contains(output, cfg.Secret) {
-		t.Logf("CONFIRMED: fmt.Sprintf(%%%%+v) on a config struct leaks the secret — " +
-			"this is why we must never log configs with %%%%+v")
+	for _, pattern := range dangerousPatterns {
+		assert.NotContains(t, src, pattern,
+			"module.go should not log config structs with %%+v or %%v — this exposes secrets. Found: %s", pattern)
 	}
 }
 
@@ -96,4 +82,25 @@ func TestNoEventPayloadInSpanAttributes(t *testing.T) {
 
 	assert.False(t, found,
 		"module.go should not store event-payload as a span attribute — it can contain sensitive data")
+}
+
+// TestDocument_PercentPlusVLeaksSecrets documents that fmt.Sprintf with %+v
+// on any struct containing a Secret field exposes the secret in plaintext.
+// This is why config objects must never be logged with %+v or %v.
+func TestDocument_PercentPlusVLeaksSecrets(t *testing.T) {
+	type configLike struct {
+		Endpoint string
+		Secret   string
+		ID       string
+	}
+
+	cfg := configLike{
+		Endpoint: "https://example.com",
+		Secret:   "c3VwZXItc2VjcmV0LXZhbHVlLTEyMw==",
+		ID:       "cfg-123",
+	}
+
+	output := fmt.Sprintf("%+v", cfg)
+	assert.Contains(t, output, cfg.Secret,
+		"this confirms %%+v leaks secrets — never log config structs this way")
 }
