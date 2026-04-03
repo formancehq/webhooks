@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/uptrace/bun/dialect/pgdialect"
@@ -37,7 +38,7 @@ func (s Store) FindManyConfigs(ctx context.Context, filters map[string]any) ([]w
 		case "event_types":
 			sq = sq.Where("? = ANY (event_types)", val)
 		default:
-			panic(key)
+			return nil, fmt.Errorf("unsupported filter key: %s", key)
 		}
 	}
 	sq.Order("updated_at DESC")
