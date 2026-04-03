@@ -116,7 +116,7 @@ The signature header format is `v1,<base64-encoded-hmac>`. Recipients should:
 
 | Component | Technology |
 |-----------|-----------|
-| Language | Go 1.24+ |
+| Language | Go 1.25+ |
 | HTTP framework | [chi](https://github.com/go-chi/chi) |
 | Database | PostgreSQL via [bun](https://bun.uptrace.dev/) ORM |
 | Message broker | Kafka or NATS via [Watermill](https://watermill.io/) |

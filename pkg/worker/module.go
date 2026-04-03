@@ -127,10 +127,11 @@ func processMessages(store storage.Store, httpClient *http.Client, retryPolicy w
 		for _, cfg := range cfgs {
 			logging.FromContext(ctx).Debugf("dispatching webhook to config %s at %s", cfg.ID, cfg.Endpoint)
 
-			attempt, err := webhooks.MakeAttempt(ctx, httpClient, retryPolicy, uuid.NewString(),
+			attempt, attemptErr := webhooks.MakeAttempt(ctx, httpClient, retryPolicy, uuid.NewString(),
 				uuid.NewString(), 0, cfg, ev.IdempotencyKey, data, false)
-			if err != nil {
-				logging.FromContext(ctx).Errorf("make attempt for config %s: %s", cfg.ID, err)
+			if attemptErr != nil {
+				logging.FromContext(ctx).Errorf("make attempt for config %s: %s", cfg.ID, attemptErr)
+				span.RecordError(attemptErr)
 				continue
 			}
 
@@ -140,11 +141,13 @@ func processMessages(store storage.Store, httpClient *http.Client, retryPolicy w
 					attempt.WebhookID, cfg.Endpoint, ev.Type)
 			}
 
-			if err := store.InsertOneAttempt(ctx, attempt); err != nil {
-				logging.FromContext(ctx).Errorf("insert attempt for config %s: %s", cfg.ID, err)
+			if insertErr := store.InsertOneAttempt(ctx, attempt); insertErr != nil {
+				logging.FromContext(ctx).Errorf("insert attempt for config %s: %s", cfg.ID, insertErr)
+				span.RecordError(insertErr)
 				if attempt.Status != webhooks.StatusAttemptSuccess {
 					// Can't persist the retry record — nack so the broker redelivers
-					return fmt.Errorf("insert attempt for config %s: %w", cfg.ID, err)
+					err = fmt.Errorf("insert attempt for config %s: %w", cfg.ID, insertErr)
+					return err
 				}
 				continue
 			}
