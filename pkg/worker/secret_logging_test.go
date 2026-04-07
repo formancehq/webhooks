@@ -96,7 +96,7 @@ func TestDocument_PercentPlusVLeaksSecrets(t *testing.T) {
 
 	cfg := configLike{
 		Endpoint: "https://example.com",
-		Secret:   "c3VwZXItc2VjcmV0LXZhbHVlLTEyMw==",
+		Secret:   "not-a-real-secret",
 		ID:       "cfg-123",
 	}
 

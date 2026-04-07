@@ -61,7 +61,24 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy Backo
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return Attempt{}, errors.Wrap(err, "http.Client.Do")
+		// Transport/timeout failure — return a retryable attempt so the record is
+		// persisted and the retry loop picks it up instead of losing the event.
+		attempt := Attempt{
+			ID:           id,
+			WebhookID:    webhookID,
+			Config:       cfg,
+			Payload:      string(payload),
+			StatusCode:   0,
+			RetryAttempt: attemptNb,
+		}
+		delay, delayErr := retryPolicy.GetRetryDelay(attemptNb)
+		if delayErr != nil {
+			attempt.Status = StatusAttemptFailed
+			return attempt, nil
+		}
+		attempt.Status = StatusAttemptToRetry
+		attempt.NextRetryAfter = ts.Add(delay)
+		return attempt, nil
 	}
 
 	defer func() {
