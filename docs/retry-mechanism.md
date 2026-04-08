@@ -75,7 +75,7 @@ WITH to_claim AS (
 claimed AS (
     UPDATE attempts
     SET status = 'retrying', updated_at = NOW()
-    WHERE webhook_id IN (SELECT webhook_id FROM to_claim_limited)
+    WHERE webhook_id IN (SELECT webhook_id FROM to_claim)
       AND status = 'to retry'
     RETURNING webhook_id
 )
@@ -87,7 +87,7 @@ When two workers execute this concurrently:
 - Worker B's UPDATE finds those rows no longer match `status = 'to retry'` and skips them.
 - No duplicate processing occurs.
 
-Oldest retries are prioritized via `ORDER BY next_retry_after ASC`, preventing starvation of long-pending webhooks.
+Oldest retries are prioritized per webhook via `ORDER BY webhook_id, next_retry_after ASC`. Note that `DISTINCT ON (webhook_id)` selects the oldest attempt for each webhook, but does not globally order across all webhooks — the batch may not contain the globally oldest retries if many webhooks have pending attempts.
 
 ### Status Scoping
 

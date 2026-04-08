@@ -2,7 +2,6 @@ package server
 
 import (
 	"net/http"
-	"os"
 
 	"github.com/formancehq/go-libs/v2/otlp"
 
@@ -38,11 +37,6 @@ func FXModuleFromFlags(cmd *cobra.Command, addr string, debug bool) fx.Option {
 	), fx.Invoke(func(lc fx.Lifecycle, handler http.Handler) {
 		lc.Append(httpserver.NewHook(handler, httpserver.WithAddress(addr)))
 	}))
-
-	logging.Debugf("starting server with env:")
-	for _, e := range os.Environ() {
-		logging.Debugf("%s", e)
-	}
 
 	return fx.Module("webhooks server", options...)
 }
