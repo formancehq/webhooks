@@ -8,7 +8,7 @@ require (
 	github.com/ThreeDotsLabs/watermill v1.4.7
 	github.com/alitto/pond v1.9.2
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
-	github.com/formancehq/go-libs/v2 v2.2.3
+	github.com/formancehq/go-libs/v2 v2.2.5
 	github.com/formancehq/webhooks/pkg/client v0.0.0-00010101000000-000000000000
 	github.com/go-chi/chi/v5 v5.2.4
 	github.com/google/uuid v1.6.0
