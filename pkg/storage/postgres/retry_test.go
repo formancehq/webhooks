@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/formancehq/go-libs/v2/bun/bundebug"
 	"github.com/formancehq/go-libs/v2/bun/bunconnect"
+	"github.com/formancehq/go-libs/v2/bun/bundebug"
 	"github.com/formancehq/go-libs/v2/logging"
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
@@ -19,6 +19,13 @@ import (
 )
 
 func newTestStore(t *testing.T) storage.Store {
+	t.Helper()
+
+	store, _ := newTestStoreWithDB(t)
+	return store
+}
+
+func newTestStoreWithDB(t *testing.T) (storage.Store, *bun.DB) {
 	t.Helper()
 
 	hooks := make([]bun.QueryHook, 0)
@@ -41,7 +48,7 @@ func newTestStore(t *testing.T) storage.Store {
 		_ = store.Close(context.Background())
 	})
 
-	return store
+	return store, db
 }
 
 func insertConfigAndAttempt(t *testing.T, db storage.Store, webhookID, status string, nextRetryAfter time.Time) webhooks.Config {
@@ -138,6 +145,112 @@ func TestClaimRespectsNextRetryAfter(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, ids, 1)
 	require.Equal(t, webhookIDPast, ids[0])
+}
+
+func TestClaimWebhookIDsToRetryWithActiveConfig(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	webhookID := uuid.NewString()
+	pastTime := time.Now().UTC().Add(-10 * time.Minute)
+
+	insertConfigAndAttempt(t, store, webhookID, webhooks.StatusAttemptToRetry, pastTime)
+
+	ids, err := store.FindWebhookIDsToRetry(ctx, 50)
+	require.NoError(t, err)
+	require.Equal(t, []string{webhookID}, ids)
+
+	atts, err := store.FindAttemptsToRetryByWebhookID(ctx, webhookID)
+	require.NoError(t, err)
+	require.Len(t, atts, 1)
+}
+
+func TestClaimWebhookIDsToRetryIgnoresInactiveConfig(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	webhookID := uuid.NewString()
+	pastTime := time.Now().UTC().Add(-10 * time.Minute)
+
+	cfg := insertConfigAndAttempt(t, store, webhookID, webhooks.StatusAttemptToRetry, pastTime)
+	_, err := store.UpdateOneConfigActivation(ctx, cfg.ID, false)
+	require.NoError(t, err)
+
+	ids, err := store.FindWebhookIDsToRetry(ctx, 50)
+	require.NoError(t, err)
+	require.Empty(t, ids)
+
+	atts, err := store.FindAttemptsToRetryByWebhookID(ctx, webhookID)
+	require.NoError(t, err)
+	require.Empty(t, atts)
+}
+
+func TestClaimWebhookIDsToRetryLeavesInactiveConfigAttemptsToRetry(t *testing.T) {
+	store, db := newTestStoreWithDB(t)
+	ctx := context.Background()
+
+	webhookID := uuid.NewString()
+	pastTime := time.Now().UTC().Add(-10 * time.Minute)
+
+	cfg := insertConfigAndAttempt(t, store, webhookID, webhooks.StatusAttemptToRetry, pastTime)
+	_, err := store.UpdateOneConfigActivation(ctx, cfg.ID, false)
+	require.NoError(t, err)
+
+	for retryAttempt := 2; retryAttempt <= 5; retryAttempt++ {
+		insertAttemptWithConfig(t, store, webhookID, cfg, webhooks.StatusAttemptToRetry, retryAttempt, pastTime)
+	}
+
+	ids, err := store.FindWebhookIDsToRetry(ctx, 50)
+	require.NoError(t, err)
+	require.Empty(t, ids)
+
+	count, err := db.NewSelect().
+		Model((*webhooks.Attempt)(nil)).
+		Where("webhook_id = ?", webhookID).
+		Where("status = ?", webhooks.StatusAttemptToRetry).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 5, count)
+}
+
+func TestClaimWebhookIDsToRetryDoesNotClaimInactiveAttemptsForClaimedWebhook(t *testing.T) {
+	store, db := newTestStoreWithDB(t)
+	ctx := context.Background()
+
+	webhookID := uuid.NewString()
+	pastTime := time.Now().UTC().Add(-10 * time.Minute)
+
+	insertConfigAndAttempt(t, store, webhookID, webhooks.StatusAttemptToRetry, pastTime)
+
+	inactiveCfg, err := store.InsertOneConfig(ctx, webhooks.ConfigUser{
+		Endpoint:   "http://localhost:8080",
+		Secret:     webhooks.NewSecret(),
+		EventTypes: []string{"test.event"},
+	})
+	require.NoError(t, err)
+	_, err = store.UpdateOneConfigActivation(ctx, inactiveCfg.ID, false)
+	require.NoError(t, err)
+	insertAttemptWithConfig(t, store, webhookID, inactiveCfg, webhooks.StatusAttemptToRetry, 1, pastTime)
+
+	ids, err := store.FindWebhookIDsToRetry(ctx, 50)
+	require.NoError(t, err)
+	require.Equal(t, []string{webhookID}, ids)
+
+	retryingCount, err := db.NewSelect().
+		Model((*webhooks.Attempt)(nil)).
+		Where("webhook_id = ?", webhookID).
+		Where("status = ?", webhooks.StatusAttemptRetrying).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, retryingCount)
+
+	toRetryCount, err := db.NewSelect().
+		Model((*webhooks.Attempt)(nil)).
+		Where("webhook_id = ?", webhookID).
+		Where("status = ?", webhooks.StatusAttemptToRetry).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, toRetryCount)
 }
 
 func TestUpdateAttemptsStatusOnlyUpdatesRetrying(t *testing.T) {
