@@ -25,18 +25,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   Dirty:
-    runs-on: "formance-runner"
+    runs-on: "namespace-profile-linux-amd64-4vcpu"
     steps:
-      - uses: 'actions/checkout@v6'
+      - uses: namespacelabs/nscloud-checkout-action@v8
         with:
           fetch-depth: 0
+          dissociate: true
       - name: Setup Env
         uses: ./.github/actions/env
         with:
           token: ${{ secrets.NUMARY_GITHUB_TOKEN }}
       - run: >
-          /nix/var/nix/profiles/default/bin/nix --extra-experimental-features "nix-command" --extra-experimental-features "flakes"
-          develop --impure --command just pre-commit
+          nix develop --impure --command just pre-commit
         env:
           SPEAKEASY_API_KEY: ${{ secrets.SPEAKEASY_API_KEY }}
       - name: Get changed files
@@ -51,25 +51,25 @@ jobs:
           fi
 
   Tests:
-    runs-on: "formance-runner"
+    runs-on: "namespace-profile-linux-amd64-8vcpu"
     needs:
       - Dirty
     steps:
-      - uses: 'actions/checkout@v6'
+      - uses: namespacelabs/nscloud-checkout-action@v8
         with:
           fetch-depth: 0
+          dissociate: true
       - name: Setup Env
         uses: ./.github/actions/env
         with:
           token: ${{ secrets.NUMARY_GITHUB_TOKEN }}
       - run: >
-          /nix/var/nix/profiles/default/bin/nix --extra-experimental-features "nix-command" --extra-experimental-features "flakes"
-          develop --impure --command just tests
+          nix develop --impure --command just tests
         env:
           SPEAKEASY_API_KEY: ${{ secrets.SPEAKEASY_API_KEY }}
 
   GoReleaser:
-    runs-on: "formance-runner"
+    runs-on: "namespace-profile-linux-amd64-4vcpu"
     if: contains(github.event.pull_request.labels.*.name, 'build-images') || github.ref == 'refs/heads/main' || github.event_name == 'merge_group'
     needs:
       - Dirty
@@ -78,16 +78,17 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           version: "latest"
-      - uses: 'actions/checkout@v6'
+      - uses: namespacelabs/nscloud-checkout-action@v8
         with:
           fetch-depth: 0
+          dissociate: true
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - name: Setup Env
         uses: ./.github/actions/env
         with:
           token: ${{ secrets.NUMARY_GITHUB_TOKEN }}
       - run: >
-          /nix/var/nix/profiles/default/bin/nix --extra-experimental-features "nix-command" --extra-experimental-features "flakes"
-          develop --impure --command just release-ci
+          nix develop --impure --command just release-ci
         env:
           GITHUB_TOKEN: ${{ secrets.NUMARY_GITHUB_TOKEN }}
           SPEAKEASY_API_KEY: ${{ secrets.SPEAKEASY_API_KEY }}
@@ -95,20 +96,34 @@ jobs:
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
 
   Deploy:
-    runs-on: "formance-runner"
+    runs-on: ubuntu-24.04
     if: github.ref == 'refs/heads/main'
     environment: staging
+    permissions:
+      id-token: write
     needs:
       - GoReleaser
       - Tests
     steps:
+      - name: Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OIDC_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_OIDC_AUDIENCE }}
+          tags: ${{ vars.TS_TAGS }}
+          version: ${{ vars.TS_VERSION }}
+          args: ${{ vars.TS_ARGS }}
+          retry: ${{ vars.TS_RETRY }}
+          timeout: ${{ vars.TS_TIMEOUT }}
+          ping: ${{ vars.TS_PING }}
       - uses: earthly/actions-setup@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           version: "latest"
-      - uses: 'actions/checkout@v6'
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          filter: tree:0
       - name: "Deploy in staging"
         env:
           TAG: ${{ github.sha }}

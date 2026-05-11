@@ -8,18 +8,18 @@ permissions:
 
 jobs:
   GoReleaser:
-    runs-on: "formance-runner"
+    runs-on: "namespace-profile-linux-amd64-4vcpu"
     steps:
-      - uses: 'actions/checkout@v6'
+      - uses: namespacelabs/nscloud-checkout-action@v8
         with:
           fetch-depth: 0
+          dissociate: true
       - name: Setup Env
         uses: ./.github/actions/env
         with:
           token: ${{ secrets.NUMARY_GITHUB_TOKEN }}
       - run: >
-          /nix/var/nix/profiles/default/bin/nix --extra-experimental-features "nix-command" --extra-experimental-features "flakes"
-          develop --impure --command just release
+          nix develop --impure --command just release
         env:
           GITHUB_TOKEN: ${{ secrets.NUMARY_GITHUB_TOKEN }}
           SPEAKEASY_API_KEY: ${{ secrets.SPEAKEASY_API_KEY }}
