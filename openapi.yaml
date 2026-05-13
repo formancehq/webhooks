@@ -65,6 +65,7 @@ paths:
 
         All eventTypes are converted to lower-case when inserted.
       operationId: insertConfig
+      x-formance-resource: true
       tags:
         - webhooks.v1
       requestBody:
@@ -300,6 +301,11 @@ components:
   schemas:
     ConfigUser:
       type: object
+      # Natural key: this resource has no required user-supplied name.
+      # `name` is optional in the API; the server assigns a UUID `id` that is
+      # the true identifier. The spike taxonomy assumes a required, immutable
+      # natural-key string — see the gap-list in the spike report.
+      x-formance-name: name
       required:
         - endpoint
         - eventTypes
@@ -307,14 +313,24 @@ components:
         name:
           type: string
           example: customer_payment
+          # `name` matches the *name pattern but is the natural key, owned by
+          # this resource; it is not a cross-module reference.
+          x-formance-no-ref: true
+          x-formance-immutable: true
         endpoint:
           type: string
           example: https://example.com
+          # External URL — not a Formance cross-resource reference.
+          x-formance-no-ref: true
         secret:
           type: string
+          format: password
           example: V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3
         eventTypes:
           type: array
+          # Internal enum-like event-type names, not refs to a Formance
+          # resource. Explicit negative declaration to satisfy the lint.
+          x-formance-no-ref: true
           items:
             type: string
             example: TYPE1
@@ -362,11 +378,13 @@ components:
         id:
           type: string
           format: uuid
+          x-formance-computed: true
         endpoint:
           type: string
           example: https://example.com
         secret:
           type: string
+          format: password
           example: V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3
         eventTypes:
           type: array
@@ -379,12 +397,15 @@ components:
         active:
           type: boolean
           example: true
+          x-formance-computed: true
         createdAt:
           type: string
           format: date-time
+          x-formance-computed: true
         updatedAt:
           type: string
           format: date-time
+          x-formance-computed: true
       required:
         - id
         - endpoint
