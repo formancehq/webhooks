@@ -39,7 +39,7 @@ The retry mechanism processes failed webhook delivery attempts. A background wor
 The `Retrier` runs in a single goroutine with the following loop:
 
 1. **Recover stale claims** (once per minute) -- Reset attempts stuck in `retrying` for more than 5 minutes (from crashed workers) back to `to retry`. This runs at most once per minute to avoid unnecessary database load.
-2. **Claim a batch** -- Atomically set up to `--retry-batch-size` (default: 50) distinct webhook IDs from `to retry` to `retrying` using a single CTE query. Oldest retries are claimed first (`ORDER BY next_retry_after ASC`).
+2. **Claim a batch** -- Atomically set up to `--retry-batch-size` (default: 50) distinct webhook IDs from `to retry` to `retrying` using a single CTE query. Oldest retries are claimed first (`ORDER BY next_retry_after ASC`). Rows already locked by another worker are skipped with `FOR UPDATE SKIP LOCKED` so workers do not block each other.
 3. **Process batch in parallel** -- All claimed webhook IDs are processed concurrently via a bounded worker pool (`pond`), capped at `--retry-batch-size` concurrent goroutines. For each webhook:
    - Fetch the `retrying` attempts
    - Unmarshal the payload from the most recent attempt
@@ -64,30 +64,51 @@ The claim is atomic and safe for concurrent workers:
 
 ```sql
 WITH to_claim AS (
-    SELECT DISTINCT ON (webhook_id) webhook_id
+    SELECT attempts.webhook_id
     FROM attempts
     JOIN configs c ON c.id = attempts.config->>'id'
     WHERE attempts.status = 'to retry'
       AND attempts.next_retry_after < NOW()
-    ORDER BY webhook_id, attempts.next_retry_after ASC
+      AND c.active = true
+      AND NOT EXISTS (
+          SELECT 1
+          FROM attempts older
+          JOIN configs older_c ON older_c.id = older.config->>'id'
+          WHERE older.webhook_id = attempts.webhook_id
+            AND older.status = 'to retry'
+            AND older.next_retry_after < NOW()
+            AND older_c.active = true
+            AND (older.next_retry_after, older.id) < (attempts.next_retry_after, attempts.id)
+      )
+    ORDER BY attempts.next_retry_after ASC, attempts.id ASC
+    FOR UPDATE OF attempts SKIP LOCKED
     LIMIT $batch_size
+),
+attempts_to_claim AS (
+    SELECT attempts.id
+    FROM attempts
+    JOIN configs c ON c.id = attempts.config->>'id'
+    WHERE attempts.webhook_id IN (SELECT webhook_id FROM to_claim)
+      AND c.active = true
+      AND attempts.status = 'to retry'
+    FOR UPDATE OF attempts SKIP LOCKED
 ),
 claimed AS (
     UPDATE attempts
     SET status = 'retrying', updated_at = NOW()
-    WHERE webhook_id IN (SELECT webhook_id FROM to_claim)
-      AND status = 'to retry'
-    RETURNING webhook_id
+    FROM attempts_to_claim
+    WHERE attempts.id = attempts_to_claim.id
+    RETURNING attempts.webhook_id
 )
 SELECT DISTINCT webhook_id FROM claimed
 ```
 
 When two workers execute this concurrently:
-- Worker A's UPDATE locks the rows and sets them to `retrying`.
-- Worker B's UPDATE finds those rows no longer match `status = 'to retry'` and skips them.
+- Worker A locks the candidate attempt rows and sets them to `retrying`.
+- Worker B skips rows already locked by Worker A and claims other available rows.
 - No duplicate processing occurs.
 
-Oldest retries are prioritized per webhook via `ORDER BY webhook_id, next_retry_after ASC`. Note that `DISTINCT ON (webhook_id)` selects the oldest attempt for each webhook, but does not globally order across all webhooks — the batch may not contain the globally oldest retries if many webhooks have pending attempts.
+Oldest retries are prioritized per webhook with the `NOT EXISTS` check, then globally across candidate webhooks via `ORDER BY next_retry_after ASC, id ASC`.
 
 ### Status Scoping
 
