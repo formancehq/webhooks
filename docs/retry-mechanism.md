@@ -91,6 +91,7 @@ attempts_to_claim AS (
     WHERE attempts.webhook_id IN (SELECT webhook_id FROM to_claim)
       AND c.active = true
       AND attempts.status = 'to retry'
+      AND attempts.next_retry_after < NOW()
     FOR UPDATE OF attempts SKIP LOCKED
 ),
 claimed AS (

@@ -184,9 +184,9 @@ func (s Store) FindWebhookIDsToRetry(ctx context.Context, limit int) ([]string, 
 			FROM attempts
 			JOIN configs c ON c.id = attempts.config->>'id'
 			WHERE attempts.webhook_id IN (SELECT webhook_id FROM to_claim)
-			  AND c.id = attempts.config->>'id'
 			  AND c.active = true
 			  AND attempts.status = ?
+			  AND attempts.next_retry_after < NOW()
 			FOR UPDATE OF attempts SKIP LOCKED
 		),
 		claimed AS (

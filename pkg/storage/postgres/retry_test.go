@@ -488,6 +488,33 @@ func TestClaimSkipsAttemptsLockedByAnotherWorker(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
+func TestClaimDoesNotClaimFutureAttemptForSameWebhook(t *testing.T) {
+	store, db := newTestStoreWithDB(t)
+	ctx := context.Background()
+
+	webhookID := uuid.NewString()
+	pastTime := time.Now().UTC().Add(-10 * time.Minute)
+	futureTime := time.Now().UTC().Add(10 * time.Minute)
+
+	insertConfigAndAttempt(t, store, webhookID, webhooks.StatusAttemptToRetry, pastTime)
+	insertConfigAndAttempt(t, store, webhookID, webhooks.StatusAttemptToRetry, futureTime)
+
+	ids, err := store.FindWebhookIDsToRetry(ctx, 1)
+	require.NoError(t, err)
+	require.Equal(t, []string{webhookID}, ids)
+
+	atts := []webhooks.Attempt{}
+	err = db.NewSelect().
+		Model(&atts).
+		Where("webhook_id = ?", webhookID).
+		Order("next_retry_after ASC").
+		Scan(ctx)
+	require.NoError(t, err)
+	require.Len(t, atts, 2)
+	require.Equal(t, webhooks.StatusAttemptRetrying, atts[0].Status)
+	require.Equal(t, webhooks.StatusAttemptToRetry, atts[1].Status)
+}
+
 func TestConcurrentGoroutineClaimsNoDuplicates(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
