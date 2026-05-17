@@ -88,10 +88,9 @@ var _ = Context("Retries", func() {
 				WithTimeout(5 * time.Second).
 				Should(BeNumerically(">=", 3))
 
-			<-time.After(2 * time.Second)
-			toRetry, err := getNumAttemptsToRetry(db)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(toRetry).To(Equal(0))
+			Eventually(getNumAttemptsToRetry).WithArguments(db).
+				WithTimeout(10 * time.Second).
+				Should(Equal(0))
 		})
 	})
 })
