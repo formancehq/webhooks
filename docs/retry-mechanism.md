@@ -153,12 +153,17 @@ This ensures no attempt is permanently stuck. The 5-minute window is chosen to b
 
 ## Database Indexes
 
-Two partial indexes optimize the retry queries:
+Partial indexes optimize the retry queries:
 
 ```sql
--- Speeds up the claim query (finding eligible retries)
-CREATE INDEX idx_attempts_retry_pending
-ON attempts (next_retry_after)
+-- Speeds up ordered retry claims without blocking on unrelated statuses
+CREATE INDEX CONCURRENTLY idx_attempts_retry_pending_due
+ON attempts (next_retry_after, id, webhook_id)
+WHERE status = 'to retry';
+
+-- Speeds up per-webhook oldest-attempt checks and claim expansion
+CREATE INDEX CONCURRENTLY idx_attempts_retry_pending_webhook_due
+ON attempts (webhook_id, next_retry_after, id)
 WHERE status = 'to retry';
 
 -- Speeds up fetching claimed attempts by webhook ID
