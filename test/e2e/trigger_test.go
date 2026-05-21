@@ -88,10 +88,9 @@ var _ = Context("Retries", func() {
 				WithTimeout(5 * time.Second).
 				Should(BeNumerically(">=", 3))
 
-			<-time.After(2 * time.Second)
-			toRetry, err := getNumAttemptsToRetry(db)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(toRetry).To(Equal(0))
+			Eventually(getNumPendingRetryAttempts).WithArguments(db).
+				WithTimeout(10 * time.Second).
+				Should(Equal(0))
 		})
 	})
 })
@@ -112,6 +111,21 @@ func getNumFailedAttempts(db *bun.DB) (int, error) {
 	var results []webhooks.Attempt
 	err := db.NewSelect().Model(&results).
 		Where("status = ?", "failed").
+		Scan(logging.TestingContext())
+	if err != nil {
+		return 0, err
+	}
+
+	return len(results), nil
+}
+
+func getNumPendingRetryAttempts(db *bun.DB) (int, error) {
+	var results []webhooks.Attempt
+	err := db.NewSelect().Model(&results).
+		Where("status IN (?)", bun.In([]string{
+			webhooks.StatusAttemptToRetry,
+			webhooks.StatusAttemptRetrying,
+		})).
 		Scan(logging.TestingContext())
 	if err != nil {
 		return 0, err

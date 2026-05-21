@@ -82,8 +82,46 @@ func Migrate(ctx context.Context, db *bun.DB) error {
 					CREATE INDEX IF NOT EXISTS idx_attempts_retrying_recovery
 					ON attempts (updated_at)
 					WHERE status = 'retrying'
-				`)
+					`)
 				return errors.Wrap(err, "creating partial index for retrying recovery")
+			},
+		},
+		migrations.Migration{
+			Name: "Add composite partial indexes for retry claims",
+			Up: func(ctx context.Context, tx bun.IDB) error {
+				_, err := tx.ExecContext(ctx, `
+						DROP INDEX CONCURRENTLY IF EXISTS idx_attempts_retry_pending_due
+					`)
+				if err != nil {
+					return errors.Wrap(err, "dropping partial index for due retry claims before rebuild")
+				}
+
+				if _, err = tx.ExecContext(ctx, `
+						CREATE INDEX CONCURRENTLY idx_attempts_retry_pending_due
+						ON attempts (next_retry_after, id, webhook_id)
+						WHERE status = 'to retry'
+					`); err != nil {
+					return errors.Wrap(err, "creating partial index for due retry claims")
+				}
+
+				if _, err = tx.ExecContext(ctx, `
+						DROP INDEX CONCURRENTLY IF EXISTS idx_attempts_retry_pending_webhook_due
+					`); err != nil {
+					return errors.Wrap(err, "dropping partial index for webhook retry claims before rebuild")
+				}
+
+				if _, err = tx.ExecContext(ctx, `
+						CREATE INDEX CONCURRENTLY idx_attempts_retry_pending_webhook_due
+						ON attempts (webhook_id, next_retry_after, id)
+						WHERE status = 'to retry'
+					`); err != nil {
+					return errors.Wrap(err, "creating partial index for webhook retry claims")
+				}
+
+				_, err = tx.ExecContext(ctx, `
+						DROP INDEX CONCURRENTLY IF EXISTS idx_attempts_retry_pending
+					`)
+				return errors.Wrap(err, "dropping redundant partial index for retry polling")
 			},
 		},
 	)

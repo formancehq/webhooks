@@ -159,28 +159,46 @@ func (s Store) FindWebhookIDsToRetry(ctx context.Context, limit int) ([]string, 
 	webhookIDs := []string{}
 	_, err := s.db.NewRaw(`
 		WITH to_claim AS (
-			SELECT DISTINCT ON (webhook_id) webhook_id
+			SELECT attempts.webhook_id
 			FROM attempts
 			JOIN configs c ON c.id = attempts.config->>'id'
 			WHERE attempts.status = ?
 			  AND attempts.next_retry_after < NOW()
 			  AND c.active = true
-			ORDER BY webhook_id, attempts.next_retry_after ASC
+			  AND NOT EXISTS (
+				  SELECT 1
+				  FROM attempts older
+				  JOIN configs older_c ON older_c.id = older.config->>'id'
+				  WHERE older.webhook_id = attempts.webhook_id
+				    AND older.status = ?
+				    AND older.next_retry_after < NOW()
+				    AND older_c.active = true
+				    AND (older.next_retry_after, older.id) < (attempts.next_retry_after, attempts.id)
+			  )
+			ORDER BY attempts.next_retry_after ASC, attempts.id ASC
+			FOR UPDATE OF attempts SKIP LOCKED
 			LIMIT ?
+		),
+		attempts_to_claim AS (
+			SELECT attempts.id
+			FROM attempts
+			JOIN configs c ON c.id = attempts.config->>'id'
+			WHERE attempts.webhook_id IN (SELECT webhook_id FROM to_claim)
+			  AND c.active = true
+			  AND attempts.status = ?
+			  AND attempts.next_retry_after < NOW()
+			FOR UPDATE OF attempts SKIP LOCKED
 		),
 		claimed AS (
 			UPDATE attempts
 			SET status = ?, updated_at = NOW()
-			FROM configs c
-			WHERE attempts.webhook_id IN (SELECT webhook_id FROM to_claim)
-			  AND c.id = attempts.config->>'id'
-			  AND c.active = true
-			  AND attempts.status = ?
+			FROM attempts_to_claim
+			WHERE attempts.id = attempts_to_claim.id
 			RETURNING attempts.webhook_id
 		)
 		SELECT DISTINCT webhook_id FROM claimed
-	`, webhooks.StatusAttemptToRetry, limit,
-		webhooks.StatusAttemptRetrying, webhooks.StatusAttemptToRetry,
+	`, webhooks.StatusAttemptToRetry, webhooks.StatusAttemptToRetry, limit,
+		webhooks.StatusAttemptToRetry, webhooks.StatusAttemptRetrying,
 	).Exec(ctx, &webhookIDs)
 	if err != nil {
 		return nil, errors.Wrap(err, "claiming webhook IDs to retry")

@@ -445,6 +445,76 @@ func TestClaimIgnoresDeletedConfig(t *testing.T) {
 	require.Len(t, ids, 0)
 }
 
+func TestClaimSkipsAttemptsLockedByAnotherWorker(t *testing.T) {
+	store, db := newTestStoreWithDB(t)
+	ctx := context.Background()
+
+	lockedWebhookID := "00000000-0000-0000-0000-000000000001"
+	availableWebhookID := "00000000-0000-0000-0000-000000000002"
+	pastTime := time.Now().UTC().Add(-10 * time.Minute)
+
+	insertConfigAndAttempt(t, store, lockedWebhookID, webhooks.StatusAttemptToRetry, pastTime)
+	insertConfigAndAttempt(t, store, availableWebhookID, webhooks.StatusAttemptToRetry, pastTime)
+
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = tx.Rollback()
+	})
+
+	var lockedAttemptID string
+	err = tx.NewRaw(`
+		SELECT id
+		FROM attempts
+		WHERE webhook_id = ?
+		FOR UPDATE
+	`, lockedWebhookID).Scan(ctx, &lockedAttemptID)
+	require.NoError(t, err)
+	require.NotEmpty(t, lockedAttemptID)
+
+	claimCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+
+	ids, err := store.FindWebhookIDsToRetry(claimCtx, 1)
+	require.NoError(t, err)
+	require.Equal(t, []string{availableWebhookID}, ids)
+
+	count, err := db.NewSelect().
+		Model((*webhooks.Attempt)(nil)).
+		Where("webhook_id = ?", lockedWebhookID).
+		Where("status = ?", webhooks.StatusAttemptToRetry).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+}
+
+func TestClaimDoesNotClaimFutureAttemptForSameWebhook(t *testing.T) {
+	store, db := newTestStoreWithDB(t)
+	ctx := context.Background()
+
+	webhookID := uuid.NewString()
+	pastTime := time.Now().UTC().Add(-10 * time.Minute)
+	futureTime := time.Now().UTC().Add(10 * time.Minute)
+
+	insertConfigAndAttempt(t, store, webhookID, webhooks.StatusAttemptToRetry, pastTime)
+	insertConfigAndAttempt(t, store, webhookID, webhooks.StatusAttemptToRetry, futureTime)
+
+	ids, err := store.FindWebhookIDsToRetry(ctx, 1)
+	require.NoError(t, err)
+	require.Equal(t, []string{webhookID}, ids)
+
+	atts := []webhooks.Attempt{}
+	err = db.NewSelect().
+		Model(&atts).
+		Where("webhook_id = ?", webhookID).
+		Order("next_retry_after ASC").
+		Scan(ctx)
+	require.NoError(t, err)
+	require.Len(t, atts, 2)
+	require.Equal(t, webhooks.StatusAttemptRetrying, atts[0].Status)
+	require.Equal(t, webhooks.StatusAttemptToRetry, atts[1].Status)
+}
+
 func TestConcurrentGoroutineClaimsNoDuplicates(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
