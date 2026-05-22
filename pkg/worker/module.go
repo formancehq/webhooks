@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -25,13 +23,12 @@ import (
 
 var Tracer = otel.Tracer("listener")
 
-func StartModule(cmd *cobra.Command, retriesCron time.Duration, retryPolicy webhooks.BackoffPolicy, retryBatchSize int, debug bool, topics []string) fx.Option {
+func StartModule(retriesCron time.Duration, retryPolicy webhooks.BackoffPolicy, retryBatchSize int, topics []string) fx.Option {
 	var options []fx.Option
 
 	options = append(options, fx.Invoke(func(r *message.Router, subscriber message.Subscriber, store storage.Store, httpClient *http.Client) {
 		configureMessageRouter(r, subscriber, topics, store, httpClient, retryPolicy)
 	}))
-	options = append(options, publish.FXModuleFromFlags(cmd, debug))
 	options = append(options, fx.Provide(
 		func() (time.Duration, webhooks.BackoffPolicy, int) {
 			return retriesCron, retryPolicy, retryBatchSize

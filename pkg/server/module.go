@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 
+	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/formancehq/go-libs/v2/otlp"
 
 	"github.com/spf13/cobra"
@@ -31,8 +32,9 @@ func FXModuleFromFlags(cmd *cobra.Command, addr string, debug bool) fx.Option {
 			logger logging.Logger,
 			info ServiceInfo,
 			authenticator auth.Authenticator,
+			publisher message.Publisher,
 		) http.Handler {
-			return newServerHandler(store, httpClient, logger, info, authenticator, debug)
+			return newServerHandler(store, httpClient, logger, info, authenticator, publisher, debug)
 		},
 	), fx.Invoke(func(lc fx.Lifecycle, handler http.Handler) {
 		lc.Append(httpserver.NewHook(handler, httpserver.WithAddress(addr)))

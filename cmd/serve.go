@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"context"
+	"io"
+
 	"github.com/formancehq/go-libs/v2/aws/iam"
+	loggingv2 "github.com/formancehq/go-libs/v2/logging"
 	"github.com/formancehq/go-libs/v2/otlp"
 	"github.com/formancehq/go-libs/v2/otlp/otlptraces"
 	"github.com/formancehq/go-libs/v2/publish"
@@ -10,6 +14,8 @@ import (
 	"github.com/formancehq/go-libs/v2/bun/bunconnect"
 	"github.com/formancehq/go-libs/v2/licence"
 	"github.com/formancehq/go-libs/v2/service"
+	loggingv5 "github.com/formancehq/go-libs/v5/pkg/observe/log"
+	"github.com/formancehq/go-libs/v5/pkg/fx/messagingfx"
 	"github.com/formancehq/webhooks/cmd/flag"
 	"github.com/formancehq/webhooks/pkg/backoff"
 	innerotlp "github.com/formancehq/webhooks/pkg/otlp"
@@ -19,6 +25,29 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/fx"
 )
+
+// loggerV5Adapter wraps a v2 Logger to satisfy the v5 Logger interface.
+type loggerV5Adapter struct {
+	inner loggingv2.Logger
+}
+
+func (a *loggerV5Adapter) Debugf(fmt string, args ...any) { a.inner.Debugf(fmt, args...) }
+func (a *loggerV5Adapter) Infof(fmt string, args ...any)  { a.inner.Infof(fmt, args...) }
+func (a *loggerV5Adapter) Errorf(fmt string, args ...any) { a.inner.Errorf(fmt, args...) }
+func (a *loggerV5Adapter) Debug(args ...any)              { a.inner.Debug(args...) }
+func (a *loggerV5Adapter) Info(args ...any)               { a.inner.Info(args...) }
+func (a *loggerV5Adapter) Error(args ...any)              { a.inner.Error(args...) }
+func (a *loggerV5Adapter) WithFields(fields map[string]any) loggingv5.Logger {
+	return &loggerV5Adapter{inner: a.inner.WithFields(fields)}
+}
+func (a *loggerV5Adapter) WithField(key string, value any) loggingv5.Logger {
+	return &loggerV5Adapter{inner: a.inner.WithField(key, value)}
+}
+func (a *loggerV5Adapter) WithContext(ctx context.Context) loggingv5.Logger {
+	return &loggerV5Adapter{inner: a.inner.WithContext(ctx)}
+}
+func (a *loggerV5Adapter) Writer() io.Writer       { return a.inner.Writer() }
+func (a *loggerV5Adapter) Enabled(loggingv5.Level) bool { return true }
 
 func newServeCommand() *cobra.Command {
 	ret := &cobra.Command{
@@ -54,9 +83,13 @@ func serve(cmd *cobra.Command, _ []string) error {
 				Version: Version,
 			}
 		}),
+		fx.Provide(func(logger loggingv2.Logger) loggingv5.Logger {
+			return &loggerV5Adapter{inner: logger}
+		}),
 		auth.FXModuleFromFlags(cmd),
 		postgres.NewModule(*connectionOptions, service.IsDebug(cmd)),
 		innerotlp.HttpClientModule(),
+		messagingfx.PublishModuleFromFlags(cmd, service.IsDebug(cmd)),
 		server.FXModuleFromFlags(cmd, listen, service.IsDebug(cmd)),
 		licence.FXModuleFromFlags(cmd, ServiceName),
 	}
@@ -70,7 +103,6 @@ func serve(cmd *cobra.Command, _ []string) error {
 		topics, _ := cmd.Flags().GetStringSlice(flag.KafkaTopics)
 
 		options = append(options, worker.StartModule(
-			cmd,
 			retryPeriod,
 			backoff.NewExponential(
 				minBackOffDelay,
@@ -78,7 +110,6 @@ func serve(cmd *cobra.Command, _ []string) error {
 				abortAfter,
 			),
 			retryBatchSize,
-			service.IsDebug(cmd),
 			topics,
 		))
 	}

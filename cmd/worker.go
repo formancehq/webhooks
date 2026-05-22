@@ -7,6 +7,7 @@ import (
 
 	"github.com/formancehq/go-libs/v2/auth"
 	"github.com/formancehq/go-libs/v2/aws/iam"
+	loggingv2 "github.com/formancehq/go-libs/v2/logging"
 	"github.com/formancehq/go-libs/v2/publish"
 
 	"github.com/formancehq/webhooks/pkg/storage/postgres"
@@ -18,6 +19,8 @@ import (
 
 	"github.com/formancehq/go-libs/v2/httpserver"
 	"github.com/formancehq/go-libs/v2/service"
+	"github.com/formancehq/go-libs/v5/pkg/fx/messagingfx"
+	loggingv5 "github.com/formancehq/go-libs/v5/pkg/observe/log"
 	"github.com/formancehq/webhooks/cmd/flag"
 	"github.com/formancehq/webhooks/pkg/backoff"
 	innerotlp "github.com/formancehq/webhooks/pkg/otlp"
@@ -69,10 +72,13 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 		fx.Invoke(func(lc fx.Lifecycle, h http.Handler) {
 			lc.Append(httpserver.NewHook(h, httpserver.WithAddress(listen)))
 		}),
+		fx.Provide(func(logger loggingv2.Logger) loggingv5.Logger {
+			return &loggerV5Adapter{inner: logger}
+		}),
 		otlp.FXModuleFromFlags(cmd),
 		otlptraces.FXModuleFromFlags(cmd),
+		messagingfx.PublishModuleFromFlags(cmd, service.IsDebug(cmd)),
 		worker.StartModule(
-			cmd,
 			retryPeriod,
 			backoff.NewExponential(
 				minBackOffDelay,
@@ -80,7 +86,6 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 				abortAfter,
 			),
 			retryBatchSize,
-			service.IsDebug(cmd),
 			topics,
 		),
 	).Run(cmd)
