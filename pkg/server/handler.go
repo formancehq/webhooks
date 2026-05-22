@@ -3,9 +3,11 @@ package server
 import (
 	"net/http"
 
+	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/go-chi/chi/v5"
 
 	"github.com/formancehq/go-libs/v2/service"
+	"github.com/formancehq/go-libs/v5/pkg/audit/httpaudit"
 
 	"github.com/formancehq/go-libs/v2/auth"
 	"github.com/formancehq/go-libs/v2/logging"
@@ -37,6 +39,7 @@ func newServerHandler(
 	logger logging.Logger,
 	info ServiceInfo,
 	authenticator auth.Authenticator,
+	publisher message.Publisher,
 	debug bool,
 ) http.Handler {
 	h := &serverHandler{
@@ -45,6 +48,7 @@ func newServerHandler(
 		httpClient: httpClient,
 	}
 
+	h.Use(httpaudit.Middleware(publisher, "audit-events", "webhooks", nil))
 	h.Use(func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

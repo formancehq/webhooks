@@ -31,7 +31,6 @@ func StartModule(cmd *cobra.Command, retriesCron time.Duration, retryPolicy webh
 	options = append(options, fx.Invoke(func(r *message.Router, subscriber message.Subscriber, store storage.Store, httpClient *http.Client) {
 		configureMessageRouter(r, subscriber, topics, store, httpClient, retryPolicy)
 	}))
-	options = append(options, publish.FXModuleFromFlags(cmd, debug))
 	options = append(options, fx.Provide(
 		func() (time.Duration, webhooks.BackoffPolicy, int) {
 			return retriesCron, retryPolicy, retryBatchSize
