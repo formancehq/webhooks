@@ -55,6 +55,7 @@ func serve(cmd *cobra.Command, _ []string) error {
 			}
 		}),
 		auth.FXModuleFromFlags(cmd),
+		publish.FXModuleFromFlags(cmd, service.IsDebug(cmd)),
 		postgres.NewModule(*connectionOptions, service.IsDebug(cmd)),
 		innerotlp.HttpClientModule(),
 		server.FXModuleFromFlags(cmd, listen, service.IsDebug(cmd)),
