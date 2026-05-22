@@ -122,7 +122,7 @@ func getNumFailedAttempts(db *bun.DB) (int, error) {
 func getNumPendingRetryAttempts(db *bun.DB) (int, error) {
 	var results []webhooks.Attempt
 	err := db.NewSelect().Model(&results).
-		Where("status IN (?)", bun.In([]string{
+		Where("status IN (?)", bun.List([]string{
 			webhooks.StatusAttemptToRetry,
 			webhooks.StatusAttemptRetrying,
 		})).

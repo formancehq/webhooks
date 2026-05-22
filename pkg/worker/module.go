@@ -70,7 +70,7 @@ func configureMessageRouter(r *message.Router, subscriber message.Subscriber, to
 	store storage.Store, httpClient *http.Client, retryPolicy webhooks.BackoffPolicy,
 ) {
 	for _, topic := range topics {
-		r.AddNoPublisherHandler(fmt.Sprintf("messages-%s", topic), topic, subscriber, processMessages(store, httpClient, retryPolicy))
+		r.AddConsumerHandler(fmt.Sprintf("messages-%s", topic), topic, subscriber, processMessages(store, httpClient, retryPolicy))
 	}
 }
 
