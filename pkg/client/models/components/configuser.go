@@ -3,17 +3,9 @@
 package components
 
 type ConfigUser struct {
-	Name       *string  `json:"name,omitempty"`
 	Endpoint   string   `json:"endpoint"`
 	Secret     *string  `json:"secret,omitempty"`
 	EventTypes []string `json:"eventTypes"`
-}
-
-func (o *ConfigUser) GetName() *string {
-	if o == nil {
-		return nil
-	}
-	return o.Name
 }
 
 func (o *ConfigUser) GetEndpoint() string {

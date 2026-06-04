@@ -106,7 +106,6 @@ func main() {
         }),
     )
     request := components.ConfigUser{
-        Name: client.String("customer_payment"),
         Endpoint: "https://example.com",
         Secret: client.String("V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3"),
         EventTypes: []string{
@@ -224,7 +223,6 @@ func main() {
     request := operations.UpdateConfigRequest{
         ID: "4997257d-dfb6-445b-929c-cbe2ab182818",
         ConfigUser: components.ConfigUser{
-            Name: client.String("customer_payment"),
             Endpoint: "https://example.com",
             Secret: client.String("V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3"),
             EventTypes: []string{
