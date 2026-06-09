@@ -327,6 +327,17 @@ func (s Store) FailOrphanedAttempts(ctx context.Context) (int64, error) {
 	return affected, nil
 }
 
+func (s Store) CountAttemptsToRetry(ctx context.Context) (int64, error) {
+	count, err := s.db.NewSelect().
+		Model((*webhooks.Attempt)(nil)).
+		Where("status = ?", webhooks.StatusAttemptToRetry).
+		Count(ctx)
+	if err != nil {
+		return 0, errors.Wrap(err, "counting attempts to retry")
+	}
+	return int64(count), nil
+}
+
 func (s Store) Close(ctx context.Context) error {
 	return s.db.Close()
 }

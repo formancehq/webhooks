@@ -87,6 +87,7 @@ func (m *mockStore) PurgeFinishedAttempts(_ context.Context, _, _ time.Duration,
 	return 0, nil
 }
 func (m *mockStore) FailOrphanedAttempts(_ context.Context) (int64, error) { return 0, nil }
+func (m *mockStore) CountAttemptsToRetry(_ context.Context) (int64, error) { return 0, nil }
 func (m *mockStore) Close(_ context.Context) error                         { return nil }
 
 func TestProcessWebhookRetrySuccess(t *testing.T) {

@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/formancehq/go-libs/v2/aws/iam"
 	"github.com/formancehq/go-libs/v2/otlp"
+	"github.com/formancehq/go-libs/v2/otlp/otlpmetrics"
 	"github.com/formancehq/go-libs/v2/otlp/otlptraces"
 	"github.com/formancehq/go-libs/v2/publish"
 
@@ -30,6 +31,7 @@ func newServeCommand() *cobra.Command {
 	}
 	otlp.AddFlags(ret.Flags())
 	otlptraces.AddFlags(ret.Flags())
+	otlpmetrics.AddFlags(ret.Flags())
 	publish.AddFlags(ServiceName, ret.Flags())
 	auth.AddFlags(ret.Flags())
 	flag.Init(ret.Flags())
@@ -56,6 +58,7 @@ func serve(cmd *cobra.Command, _ []string) error {
 		}),
 		auth.FXModuleFromFlags(cmd),
 		publish.FXModuleFromFlags(cmd, service.IsDebug(cmd)),
+		otlpmetrics.FXModuleFromFlags(cmd),
 		postgres.NewModule(*connectionOptions, service.IsDebug(cmd)),
 		innerotlp.HttpClientModule(),
 		server.FXModuleFromFlags(cmd, listen, service.IsDebug(cmd)),

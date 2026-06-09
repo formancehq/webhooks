@@ -38,4 +38,8 @@ type Store interface {
 	// config no longer exists as 'failed', so they stop polluting the retry queue
 	// forever. Returns the number of rows updated.
 	FailOrphanedAttempts(ctx context.Context) (int64, error)
+	// CountAttemptsToRetry returns the number of attempts currently queued for
+	// retry ('to retry'). Used as the retry-queue-depth gauge — the leading
+	// indicator of a retry storm.
+	CountAttemptsToRetry(ctx context.Context) (int64, error)
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/formancehq/go-libs/v2/logging"
+	"github.com/formancehq/webhooks/pkg/metrics"
 	"github.com/formancehq/webhooks/pkg/security"
 	"github.com/pkg/errors"
 	"github.com/uptrace/bun"
@@ -104,18 +105,34 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy Backo
 		req.Header.Set("formance-webhook-idempotency-key", idempotencyKey)
 	}
 
-	resp, err := httpClient.Do(req)
+	start := time.Now()
+	resp, doErr := httpClient.Do(req)
+
+	attempt, err := classifyResponse(ctx, resp, doErr, retryPolicy, attemptNb, ts, Attempt{
+		ID:           id,
+		WebhookID:    webhookID,
+		Config:       cfg,
+		Payload:      string(payload),
+		RetryAttempt: attemptNb,
+	})
 	if err != nil {
+		return Attempt{}, err
+	}
+
+	metrics.RecordDelivery(ctx, attempt.Status, attempt.StatusCode, time.Since(start))
+	return attempt, nil
+}
+
+// classifyResponse turns the result of the delivery HTTP call into a persisted
+// Attempt with its final status. base carries the identity fields already set by
+// the caller; doErr is the transport error (if any).
+func classifyResponse(ctx context.Context, resp *http.Response, doErr error, retryPolicy BackoffPolicy, attemptNb int, ts time.Time, base Attempt) (Attempt, error) {
+	attempt := base
+
+	if doErr != nil {
 		// Transport/timeout failure — return a retryable attempt so the record is
 		// persisted and the retry loop picks it up instead of losing the event.
-		attempt := Attempt{
-			ID:           id,
-			WebhookID:    webhookID,
-			Config:       cfg,
-			Payload:      string(payload),
-			StatusCode:   0,
-			RetryAttempt: attemptNb,
-		}
+		attempt.StatusCode = 0
 		delay, delayErr := retryPolicy.GetRetryDelay(attemptNb)
 		if delayErr != nil {
 			attempt.Status = StatusAttemptFailed
@@ -139,14 +156,7 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy Backo
 	}
 	logging.FromContext(ctx).Debugf("webhooks.MakeAttempt: server response body: %s", string(body))
 
-	attempt := Attempt{
-		ID:           id,
-		WebhookID:    webhookID,
-		Config:       cfg,
-		Payload:      string(payload),
-		StatusCode:   resp.StatusCode,
-		RetryAttempt: attemptNb,
-	}
+	attempt.StatusCode = resp.StatusCode
 
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
 		attempt.Status = StatusAttemptSuccess

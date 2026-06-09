@@ -12,6 +12,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/ThreeDotsLabs/watermill/message"
@@ -38,6 +39,7 @@ func StartModule(cmd *cobra.Command, retriesCron time.Duration, retryPolicy webh
 		NewRetrier,
 	))
 	options = append(options, fx.Invoke(run))
+	options = append(options, fx.Invoke(registerQueueDepthMetric))
 
 	if retention.Enabled() {
 		options = append(options,
@@ -72,6 +74,26 @@ func run(lc fx.Lifecycle, w *Retrier) {
 			return nil
 		},
 	})
+}
+
+// registerQueueDepthMetric registers the retry-queue-depth observable gauge. It
+// binds to the global meter provider (a no-op when metrics are disabled), so the
+// callback only queries the store when a real collector is scraping.
+func registerQueueDepthMetric(store storage.Store) error {
+	meter := otel.GetMeterProvider().Meter("webhooks")
+	_, err := meter.Int64ObservableGauge(
+		"webhooks_retry_queue_depth",
+		metric.WithDescription("Number of attempts currently queued for retry ('to retry')"),
+		metric.WithInt64Callback(func(ctx context.Context, o metric.Int64Observer) error {
+			n, err := store.CountAttemptsToRetry(ctx)
+			if err != nil {
+				return err
+			}
+			o.Observe(n)
+			return nil
+		}),
+	)
+	return err
 }
 
 func runRetention(lc fx.Lifecycle, r *Retention) {

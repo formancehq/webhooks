@@ -14,6 +14,7 @@ import (
 	"github.com/formancehq/go-libs/v2/bun/bunconnect"
 	"github.com/formancehq/go-libs/v2/licence"
 
+	"github.com/formancehq/go-libs/v2/otlp/otlpmetrics"
 	"github.com/formancehq/go-libs/v2/otlp/otlptraces"
 
 	"github.com/formancehq/go-libs/v2/httpserver"
@@ -35,6 +36,7 @@ func newWorkerCommand() *cobra.Command {
 	}
 	otlp.AddFlags(ret.Flags())
 	otlptraces.AddFlags(ret.Flags())
+	otlpmetrics.AddFlags(ret.Flags())
 	publish.AddFlags(ServiceName, ret.Flags())
 	auth.AddFlags(ret.Flags())
 	flag.Init(ret.Flags())
@@ -73,6 +75,7 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 		}),
 		otlp.FXModuleFromFlags(cmd),
 		otlptraces.FXModuleFromFlags(cmd),
+		otlpmetrics.FXModuleFromFlags(cmd),
 		worker.StartModule(
 			cmd,
 			retryPeriod,
