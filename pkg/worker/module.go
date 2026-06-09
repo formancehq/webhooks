@@ -25,7 +25,7 @@ import (
 
 var Tracer = otel.Tracer("listener")
 
-func StartModule(cmd *cobra.Command, retriesCron time.Duration, retryPolicy webhooks.BackoffPolicy, retryBatchSize int, debug bool, topics []string) fx.Option {
+func StartModule(cmd *cobra.Command, retriesCron time.Duration, retryPolicy webhooks.BackoffPolicy, retryBatchSize int, debug bool, topics []string, retention RetentionConfig) fx.Option {
 	var options []fx.Option
 
 	options = append(options, fx.Invoke(func(r *message.Router, subscriber message.Subscriber, store storage.Store, httpClient *http.Client) {
@@ -38,6 +38,15 @@ func StartModule(cmd *cobra.Command, retriesCron time.Duration, retryPolicy webh
 		NewRetrier,
 	))
 	options = append(options, fx.Invoke(run))
+
+	if retention.Enabled() {
+		options = append(options,
+			fx.Provide(func(store storage.Store) *Retention {
+				return NewRetention(store, retention)
+			}),
+			fx.Invoke(runRetention),
+		)
+	}
 
 	return fx.Options(options...)
 }
@@ -59,6 +68,26 @@ func run(lc fx.Lifecycle, w *Retrier) {
 
 			if err := w.store.Close(ctx); err != nil {
 				return fmt.Errorf("storage.Store.Close: %w", err)
+			}
+			return nil
+		},
+	})
+}
+
+func runRetention(lc fx.Lifecycle, r *Retention) {
+	ctx, cancel := context.WithCancel(context.Background())
+	lc.Append(fx.Hook{
+		OnStart: func(startCtx context.Context) error {
+			logging.FromContext(startCtx).Debugf("starting retention...")
+			go r.Run(ctx)
+			return nil
+		},
+		OnStop: func(stopCtx context.Context) error {
+			logging.FromContext(stopCtx).Debugf("stopping retention...")
+			cancel()
+			select {
+			case <-r.doneCh:
+			case <-stopCtx.Done():
 			}
 			return nil
 		},

@@ -258,6 +258,75 @@ func (s Store) InsertOneAttempt(ctx context.Context, att webhooks.Attempt) error
 	return nil
 }
 
+func (s Store) PurgeFinishedAttempts(ctx context.Context, successOlderThan, failedOlderThan time.Duration, batchSize int) (int64, error) {
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+
+	type purgeTarget struct {
+		status    string
+		retention time.Duration
+	}
+	targets := []purgeTarget{
+		{webhooks.StatusAttemptSuccess, successOlderThan},
+		{webhooks.StatusAttemptFailed, failedOlderThan},
+	}
+
+	var total int64
+	for _, t := range targets {
+		if t.retention <= 0 {
+			continue
+		}
+		cutoff := time.Now().UTC().Add(-t.retention)
+
+		// Delete in bounded batches so a large backlog does not lock the table or
+		// generate one huge transaction. Loop until a batch deletes fewer rows
+		// than requested, meaning the backlog is drained.
+		for {
+			res, err := s.db.NewRaw(`
+				DELETE FROM attempts
+				WHERE id IN (
+					SELECT id FROM attempts
+					WHERE status = ? AND updated_at < ?
+					LIMIT ?
+				)
+			`, t.status, cutoff, batchSize).Exec(ctx)
+			if err != nil {
+				return total, errors.Wrapf(err, "purging %q attempts", t.status)
+			}
+			affected, err := res.RowsAffected()
+			if err != nil {
+				return total, errors.Wrap(err, "reading purge rows affected")
+			}
+			total += affected
+			if affected < int64(batchSize) {
+				break
+			}
+		}
+	}
+
+	return total, nil
+}
+
+func (s Store) FailOrphanedAttempts(ctx context.Context) (int64, error) {
+	res, err := s.db.NewRaw(`
+		UPDATE attempts
+		SET status = ?, updated_at = NOW()
+		WHERE status IN (?, ?)
+		  AND NOT EXISTS (
+			SELECT 1 FROM configs c WHERE c.id = attempts.config->>'id'
+		  )
+	`, webhooks.StatusAttemptFailed, webhooks.StatusAttemptToRetry, webhooks.StatusAttemptRetrying).Exec(ctx)
+	if err != nil {
+		return 0, errors.Wrap(err, "failing orphaned attempts")
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, errors.Wrap(err, "reading orphaned rows affected")
+	}
+	return affected, nil
+}
+
 func (s Store) Close(ctx context.Context) error {
 	return s.db.Close()
 }

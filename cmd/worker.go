@@ -60,6 +60,7 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 	maxAttempts, _ := cmd.Flags().GetInt(flag.MaxAttempts)
 	topics, _ := cmd.Flags().GetStringSlice(flag.KafkaTopics)
 	listen, _ := cmd.Flags().GetString(flag.Listen)
+	retention := retentionConfigFromFlags(cmd)
 
 	return service.New(
 		cmd.OutOrStdout(),
@@ -84,6 +85,18 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 			retryBatchSize,
 			service.IsDebug(cmd),
 			topics,
+			retention,
 		),
 	).Run(cmd)
+}
+
+func retentionConfigFromFlags(cmd *cobra.Command) worker.RetentionConfig {
+	period, _ := cmd.Flags().GetDuration(flag.RetentionPeriod)
+	successDelay, _ := cmd.Flags().GetDuration(flag.RetentionSuccessDelay)
+	failedDelay, _ := cmd.Flags().GetDuration(flag.RetentionFailedDelay)
+	return worker.RetentionConfig{
+		Period:       period,
+		SuccessDelay: successDelay,
+		FailedDelay:  failedDelay,
+	}
 }

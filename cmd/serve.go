@@ -83,6 +83,7 @@ func serve(cmd *cobra.Command, _ []string) error {
 			retryBatchSize,
 			service.IsDebug(cmd),
 			topics,
+			retentionConfigFromFlags(cmd),
 		))
 	}
 

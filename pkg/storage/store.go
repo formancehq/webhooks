@@ -28,4 +28,14 @@ type Store interface {
 	InsertOneAttempt(ctx context.Context, att webhooks.Attempt) error
 	Close(ctx context.Context) error
 	UpdateOneConfig(ctx context.Context, id string, cfg webhooks.ConfigUser) error
+
+	// PurgeFinishedAttempts deletes terminal attempts older than the given
+	// retentions (success vs failed), in batches of at most batchSize rows, and
+	// returns the total number of rows deleted. A retention <= 0 disables purging
+	// for that status.
+	PurgeFinishedAttempts(ctx context.Context, successOlderThan, failedOlderThan time.Duration, batchSize int) (int64, error)
+	// FailOrphanedAttempts marks pending attempts ('to retry'/'retrying') whose
+	// config no longer exists as 'failed', so they stop polluting the retry queue
+	// forever. Returns the number of rows updated.
+	FailOrphanedAttempts(ctx context.Context) (int64, error)
 }

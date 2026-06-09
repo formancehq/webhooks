@@ -83,7 +83,11 @@ func (m *mockStore) UpdateOneConfigSecret(_ context.Context, _, _ string) (webho
 func (m *mockStore) UpdateOneConfig(_ context.Context, _ string, _ webhooks.ConfigUser) error {
 	return nil
 }
-func (m *mockStore) Close(_ context.Context) error { return nil }
+func (m *mockStore) PurgeFinishedAttempts(_ context.Context, _, _ time.Duration, _ int) (int64, error) {
+	return 0, nil
+}
+func (m *mockStore) FailOrphanedAttempts(_ context.Context) (int64, error) { return 0, nil }
+func (m *mockStore) Close(_ context.Context) error                         { return nil }
 
 func TestProcessWebhookRetrySuccess(t *testing.T) {
 	// HTTP server that returns 200
