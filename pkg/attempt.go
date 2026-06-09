@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/formancehq/go-libs/v2/logging"
@@ -13,6 +15,49 @@ import (
 	"github.com/pkg/errors"
 	"github.com/uptrace/bun"
 )
+
+// maxResponseBody caps how much of an endpoint's response we read. The body is
+// only used for debug logging / diagnostics, so there is no reason to let a
+// malicious or buggy endpoint stream an unbounded payload into worker memory.
+const maxResponseBody = 64 << 10 // 64 KiB
+
+// isPermanentClientError reports whether an HTTP status code is a client error
+// that will never succeed on retry. Retrying these (wrong credentials, gone,
+// method not allowed, ...) only amplifies load — the root cause of the observed
+// retry storms. 408 (Request Timeout) and 429 (Too Many Requests) are explicitly
+// excluded: they are transient and worth retrying.
+func isPermanentClientError(statusCode int) bool {
+	if statusCode < http.StatusBadRequest || statusCode >= http.StatusInternalServerError {
+		return false
+	}
+	switch statusCode {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+		return false
+	default:
+		return true
+	}
+}
+
+// parseRetryAfter interprets a Retry-After header (delay-seconds or HTTP-date)
+// relative to now. It returns false when the header is absent or unparseable.
+func parseRetryAfter(header string, now time.Time) (time.Duration, bool) {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return 0, false
+	}
+	if secs, err := strconv.Atoi(header); err == nil {
+		if secs < 0 {
+			return 0, false
+		}
+		return time.Duration(secs) * time.Second, true
+	}
+	if t, err := http.ParseTime(header); err == nil {
+		if d := t.Sub(now); d > 0 {
+			return d, true
+		}
+	}
+	return 0, false
+}
 
 const (
 	StatusAttemptSuccess  = "success"
@@ -88,7 +133,7 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy Backo
 		}
 	}()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 	if err != nil {
 		return Attempt{}, errors.Wrap(err, "io.ReadAll")
 	}
@@ -108,10 +153,23 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy Backo
 		return attempt, nil
 	}
 
+	// Permanent client errors will never succeed on retry — fail fast instead of
+	// retrying for the whole abort-after window.
+	if isPermanentClientError(resp.StatusCode) {
+		attempt.Status = StatusAttemptFailed
+		return attempt, nil
+	}
+
 	delay, err := retryPolicy.GetRetryDelay(attemptNb)
 	if err != nil {
 		attempt.Status = StatusAttemptFailed
 		return attempt, nil
+	}
+
+	// Respect an explicit Retry-After (429/503) when it asks us to wait longer
+	// than our computed backoff.
+	if retryAfter, ok := parseRetryAfter(resp.Header.Get("Retry-After"), ts); ok && retryAfter > delay {
+		delay = retryAfter
 	}
 
 	attempt.Status = StatusAttemptToRetry
