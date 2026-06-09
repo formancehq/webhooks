@@ -14,6 +14,22 @@ The retry mechanism processes failed webhook delivery attempts. A background wor
 | `to retry` | Delivery failed, scheduled for retry with a `next_retry_after` timestamp |
 | `retrying` | Claimed by a worker, currently being processed |
 | `failed` | Max retry duration exceeded, permanently failed |
+| `suppressed` | Retry was claimed but not delivered because the webhook circuit is open |
+
+### Delivery Circuit Breaker
+
+Retries are gated by a delivery circuit breaker per webhook config. The circuit is separate from config activation:
+
+- `configs.active` means the user wants the webhook enabled.
+- Circuit state means the platform currently considers delivery healthy enough to attempt.
+
+The circuit starts `closed`. Retryable failures increment a consecutive failure counter. After 10 consecutive failures, the circuit opens for 5 minutes. While open:
+
+- New events for that config are skipped without creating per-event delivery attempts.
+- Claimed retry attempts are marked `suppressed` instead of performing another HTTP call.
+- When the open window expires, one worker may move the circuit to `half_open` and perform a probe delivery.
+
+A successful probe closes the circuit and resets counters. A failed probe reopens it with exponential probe backoff, capped at 1 hour.
 
 ### Lifecycle
 
@@ -30,6 +46,7 @@ The retry mechanism processes failed webhook delivery attempts. A background wor
                                     success? --> "success"
                                     failure? --> "to retry" (retry again later)
                                     max delay? --> "failed"
+                                    circuit open? --> "suppressed"
 ```
 
 ## Worker Behavior
@@ -42,6 +59,8 @@ The `Retrier` runs in a single goroutine with the following loop:
 2. **Claim a batch** -- Atomically set up to `--retry-batch-size` (default: 50) distinct webhook IDs from `to retry` to `retrying` using a single CTE query. Oldest retries are claimed first (`ORDER BY next_retry_after ASC`). Rows already locked by another worker are skipped with `FOR UPDATE SKIP LOCKED` so workers do not block each other.
 3. **Process batch in parallel** -- All claimed webhook IDs are processed concurrently via a bounded worker pool (`pond`), capped at `--retry-batch-size` concurrent goroutines. For each webhook:
    - Fetch the `retrying` attempts
+   - Check the delivery circuit for the attempt config
+   - Mark claimed attempts as `suppressed` without HTTP delivery if the circuit is open
    - Unmarshal the payload from the most recent attempt
    - Execute the HTTP call (`MakeAttempt`) with a 30-second timeout
    - Insert a new attempt record with the result

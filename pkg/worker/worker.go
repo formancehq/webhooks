@@ -133,6 +133,21 @@ func (w *Retrier) processWebhookRetry(ctx context.Context, webhookID string) {
 		return
 	}
 
+	decision, err := w.store.BeforeDelivery(ctx, atts[0].Config.ID)
+	if err != nil {
+		logging.FromContext(ctx).Errorf("checking delivery circuit for webhook %s: %s", webhookID, err)
+		return
+	}
+	if !decision.Allowed {
+		if _, err := w.store.UpdateAttemptsStatus(ctx, webhookID, webhooks.StatusAttemptSuppressed); err != nil {
+			if errors.Is(err, storage.ErrAttemptsNotModified) {
+				return
+			}
+			logging.FromContext(ctx).Errorf("suppressing retry attempts for webhook %s: %s", webhookID, err)
+		}
+		return
+	}
+
 	var ev publish.EventMessage
 	if err := json.Unmarshal([]byte(atts[0].Payload), &ev); err != nil {
 		logging.FromContext(ctx).Errorf("unmarshalling payload for webhook %s: %s", webhookID, err)
@@ -150,6 +165,10 @@ func (w *Retrier) processWebhookRetry(ctx context.Context, webhookID string) {
 	if err := w.store.InsertOneAttempt(ctx, attempt); err != nil {
 		logging.FromContext(ctx).Errorf("inserting attempt for webhook %s: %s", webhookID, err)
 		return
+	}
+
+	if err := recordCircuitResult(ctx, w.store, atts[0].Config.ID, attempt); err != nil {
+		logging.FromContext(ctx).Errorf("recording delivery circuit result for webhook %s: %s", webhookID, err)
 	}
 
 	if _, err := w.store.UpdateAttemptsStatus(ctx, webhookID, attempt.Status); err != nil {

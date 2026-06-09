@@ -75,7 +75,7 @@ Persist circuit state separately from webhook configuration. A dedicated table i
 
 ```text
 webhook_delivery_circuits
-  config_id primary key
+  config_id text primary key references configs(id)
   state
   consecutive_failures
   window_started_at

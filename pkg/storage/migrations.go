@@ -124,6 +124,36 @@ func Migrate(ctx context.Context, db *bun.DB) error {
 				return errors.Wrap(err, "dropping redundant partial index for retry polling")
 			},
 		},
+		migrations.Migration{
+			Name: "Add webhook delivery circuits",
+			Up: func(ctx context.Context, tx bun.IDB) error {
+				_, err := tx.ExecContext(ctx, `
+					CREATE TABLE IF NOT EXISTS webhook_delivery_circuits (
+						config_id text PRIMARY KEY REFERENCES configs(id) ON DELETE CASCADE,
+						state text NOT NULL DEFAULT 'closed',
+						consecutive_failures integer NOT NULL DEFAULT 0,
+						opened_until timestamptz,
+						probe_attempt integer NOT NULL DEFAULT 0,
+						last_failure_at timestamptz,
+						last_failure_status_code integer,
+						last_failure_reason text,
+						updated_at timestamptz NOT NULL DEFAULT now(),
+						CONSTRAINT webhook_delivery_circuits_state_check
+							CHECK (state IN ('closed', 'open', 'half_open'))
+					)
+				`)
+				if err != nil {
+					return errors.Wrap(err, "creating webhook delivery circuits table")
+				}
+
+				_, err = tx.ExecContext(ctx, `
+					CREATE INDEX IF NOT EXISTS idx_webhook_delivery_circuits_opened_until
+					ON webhook_delivery_circuits (opened_until)
+					WHERE state = 'open'
+				`)
+				return errors.Wrap(err, "creating webhook delivery circuits opened_until index")
+			},
+		},
 	)
 
 	return migrator.Up(ctx)

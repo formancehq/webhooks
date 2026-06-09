@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill/message"
-	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/formancehq/go-libs/v2/publish"
+	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -147,6 +147,50 @@ func TestProcessMessages_NackOnInsertFailureForRetry(t *testing.T) {
 	err = handler(msg)
 	assert.Error(t, err, "handler should return error when insert fails for a non-success attempt")
 	assert.Contains(t, err.Error(), "insert attempt")
+}
+
+func TestProcessMessages_SkipsDeliveryWhenCircuitOpen(t *testing.T) {
+	var callCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cfg := webhooks.Config{
+		ConfigUser: webhooks.ConfigUser{
+			Endpoint:   server.URL,
+			Secret:     webhooks.NewSecret(),
+			EventTypes: []string{"test.event"},
+		},
+		ID:     "cfg-1",
+		Active: true,
+	}
+
+	store := newMockStore(nil, nil)
+	store.decisions[cfg.ID] = webhooks.CircuitDecision{
+		Allowed: false,
+		Reason:  webhooks.CircuitDecisionReasonOpenUntil,
+	}
+
+	configStore := &mockStoreWithConfigs{
+		mockStore: store,
+		configs:   []webhooks.Config{cfg},
+	}
+
+	handler := processMessages(configStore, server.Client(), &noRetryPolicy{})
+
+	ev := publish.EventMessage{
+		Type: "test.event",
+	}
+	payload, err := json.Marshal(ev)
+	require.NoError(t, err)
+
+	msg := message.NewMessage("test-uuid", payload)
+
+	require.NoError(t, handler(msg))
+	assert.Equal(t, int32(0), callCount.Load())
+	assert.Len(t, store.inserted, 0)
 }
 
 // mockStoreWithConfigs extends mockStore to return pre-configured configs

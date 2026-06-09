@@ -258,6 +258,186 @@ func (s Store) InsertOneAttempt(ctx context.Context, att webhooks.Attempt) error
 	return nil
 }
 
+func (s Store) BeforeDelivery(ctx context.Context, configID string) (webhooks.CircuitDecision, error) {
+	now := time.Now().UTC()
+
+	circuit, err := s.findDeliveryCircuit(ctx, s.db, configID)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return webhooks.CircuitDecision{}, errors.Wrap(err, "finding delivery circuit")
+		}
+
+		if err := ensureDeliveryCircuit(ctx, s.db, configID); err != nil {
+			return webhooks.CircuitDecision{}, errors.Wrap(err, "ensuring delivery circuit")
+		}
+		return webhooks.CircuitDecision{
+			Allowed: true,
+			Reason:  webhooks.CircuitDecisionReasonClosed,
+		}, nil
+	}
+
+	switch circuit.State {
+	case webhooks.CircuitStateClosed:
+		return webhooks.CircuitDecision{
+			Allowed: true,
+			Reason:  webhooks.CircuitDecisionReasonClosed,
+		}, nil
+	case webhooks.CircuitStateHalfOpen:
+		return webhooks.CircuitDecision{
+			Allowed: false,
+			Reason:  webhooks.CircuitDecisionReasonProbeBusy,
+		}, nil
+	case webhooks.CircuitStateOpen:
+		if !circuit.OpenedUntil.IsZero() && !circuit.OpenedUntil.After(now) {
+			claimed, err := s.claimHalfOpenProbe(ctx, configID, now)
+			if err != nil {
+				return webhooks.CircuitDecision{}, errors.Wrap(err, "claiming half-open probe")
+			}
+			if claimed {
+				return webhooks.CircuitDecision{
+					Allowed: true,
+					Reason:  webhooks.CircuitDecisionReasonHalfOpenProbe,
+				}, nil
+			}
+
+			return webhooks.CircuitDecision{
+				Allowed: false,
+				Reason:  webhooks.CircuitDecisionReasonProbeBusy,
+			}, nil
+		}
+
+		return webhooks.CircuitDecision{
+			Allowed:     false,
+			Reason:      webhooks.CircuitDecisionReasonOpenUntil,
+			OpenedUntil: circuit.OpenedUntil,
+		}, nil
+	default:
+		return webhooks.CircuitDecision{}, fmt.Errorf("unknown delivery circuit state %q", circuit.State)
+	}
+}
+
+func (s Store) RecordSuccess(ctx context.Context, configID string) error {
+	if err := ensureDeliveryCircuit(ctx, s.db, configID); err != nil {
+		return errors.Wrap(err, "ensuring delivery circuit")
+	}
+
+	_, err := s.db.NewUpdate().
+		Model((*webhooks.DeliveryCircuit)(nil)).
+		Where("config_id = ?", configID).
+		Set("state = ?", webhooks.CircuitStateClosed).
+		Set("consecutive_failures = 0").
+		Set("opened_until = NULL").
+		Set("probe_attempt = 0").
+		Set("last_failure_at = NULL").
+		Set("last_failure_status_code = NULL").
+		Set("last_failure_reason = NULL").
+		Set("updated_at = ?", time.Now().UTC()).
+		Exec(ctx)
+	return errors.Wrap(err, "recording delivery circuit success")
+}
+
+func (s Store) RecordFailure(ctx context.Context, configID string, failure webhooks.DeliveryFailure) error {
+	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := ensureDeliveryCircuit(ctx, tx, configID); err != nil {
+			return errors.Wrap(err, "ensuring delivery circuit")
+		}
+
+		circuit, err := s.findDeliveryCircuit(ctx, tx, configID)
+		if err != nil {
+			return errors.Wrap(err, "finding delivery circuit")
+		}
+
+		now := time.Now().UTC()
+		circuit.ConsecutiveFailures++
+		circuit.LastFailureAt = now
+		circuit.LastFailureStatusCode = failure.StatusCode
+		circuit.LastFailureReason = deliveryFailureReason(failure)
+		circuit.UpdatedAt = now
+
+		switch circuit.State {
+		case webhooks.CircuitStateHalfOpen:
+			circuit.State = webhooks.CircuitStateOpen
+			circuit.ProbeAttempt++
+			circuit.OpenedUntil = now.Add(webhooks.CircuitProbeDelay(circuit.ProbeAttempt))
+		case webhooks.CircuitStateClosed:
+			if circuit.ConsecutiveFailures >= webhooks.DefaultCircuitFailureThreshold {
+				circuit.State = webhooks.CircuitStateOpen
+				circuit.ProbeAttempt = 0
+				circuit.OpenedUntil = now.Add(webhooks.DefaultCircuitOpenDelay)
+			}
+		case webhooks.CircuitStateOpen:
+			// A race can record a failure after another worker already opened the
+			// circuit. Keep the current open window and only refresh failure details.
+		default:
+			return fmt.Errorf("unknown delivery circuit state %q", circuit.State)
+		}
+
+		_, err = tx.NewUpdate().
+			Model(&circuit).
+			WherePK().
+			Column("state").
+			Column("consecutive_failures").
+			Column("opened_until").
+			Column("probe_attempt").
+			Column("last_failure_at").
+			Column("last_failure_status_code").
+			Column("last_failure_reason").
+			Column("updated_at").
+			Exec(ctx)
+		return errors.Wrap(err, "recording delivery circuit failure")
+	})
+}
+
+func (s Store) findDeliveryCircuit(ctx context.Context, db bun.IDB, configID string) (webhooks.DeliveryCircuit, error) {
+	circuit := webhooks.DeliveryCircuit{}
+	if err := db.NewSelect().
+		Model(&circuit).
+		Where("config_id = ?", configID).
+		For("UPDATE").
+		Scan(ctx); err != nil {
+		return webhooks.DeliveryCircuit{}, err
+	}
+	return circuit, nil
+}
+
+func (s Store) claimHalfOpenProbe(ctx context.Context, configID string, now time.Time) (bool, error) {
+	circuit := webhooks.DeliveryCircuit{}
+	err := s.db.NewRaw(`
+		UPDATE webhook_delivery_circuits
+		SET state = ?, updated_at = ?
+		WHERE config_id = ?
+		  AND state = ?
+		  AND opened_until <= ?
+		RETURNING *
+	`, webhooks.CircuitStateHalfOpen, now, configID, webhooks.CircuitStateOpen, now).Scan(ctx, &circuit)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func ensureDeliveryCircuit(ctx context.Context, db bun.IDB, configID string) error {
+	circuit := webhooks.NewDeliveryCircuit(configID)
+	_, err := db.NewInsert().
+		Model(&circuit).
+		On("CONFLICT (config_id) DO NOTHING").
+		Exec(ctx)
+	return err
+}
+
+func deliveryFailureReason(failure webhooks.DeliveryFailure) string {
+	if failure.Reason != "" {
+		return failure.Reason
+	}
+	if failure.StatusCode == 0 {
+		return "transport_error"
+	}
+	return fmt.Sprintf("status_code_%d", failure.StatusCode)
+}
+
 func (s Store) Close(ctx context.Context) error {
 	return s.db.Close()
 }

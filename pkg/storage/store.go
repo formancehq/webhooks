@@ -16,6 +16,8 @@ var (
 )
 
 type Store interface {
+	webhooks.CircuitBreaker
+
 	FindManyConfigs(ctx context.Context, filter map[string]any) ([]webhooks.Config, error)
 	InsertOneConfig(ctx context.Context, cfg webhooks.ConfigUser) (webhooks.Config, error)
 	DeleteOneConfig(ctx context.Context, id string) error

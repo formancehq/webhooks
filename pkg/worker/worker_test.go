@@ -17,18 +17,24 @@ import (
 
 // mockStore implements storage.Store with only the methods needed for retry tests.
 type mockStore struct {
-	mu         sync.Mutex
-	webhookIDs []string
-	attempts   map[string][]webhooks.Attempt
-	inserted   []webhooks.Attempt
-	updated    map[string]string // webhookID -> final status
+	mu               sync.Mutex
+	webhookIDs       []string
+	attempts         map[string][]webhooks.Attempt
+	inserted         []webhooks.Attempt
+	updated          map[string]string // webhookID -> final status
+	decisions        map[string]webhooks.CircuitDecision
+	circuitSuccesses map[string]int
+	circuitFailures  map[string]int
 }
 
 func newMockStore(webhookIDs []string, attempts map[string][]webhooks.Attempt) *mockStore {
 	return &mockStore{
-		webhookIDs: webhookIDs,
-		attempts:   attempts,
-		updated:    make(map[string]string),
+		webhookIDs:       webhookIDs,
+		attempts:         attempts,
+		updated:          make(map[string]string),
+		decisions:        make(map[string]webhooks.CircuitDecision),
+		circuitSuccesses: make(map[string]int),
+		circuitFailures:  make(map[string]int),
 	}
 }
 
@@ -63,6 +69,35 @@ func (m *mockStore) UpdateAttemptsStatus(_ context.Context, webhookID string, st
 }
 
 func (m *mockStore) RecoverStaleRetryingAttempts(_ context.Context, _ time.Duration) error {
+	return nil
+}
+
+func (m *mockStore) BeforeDelivery(_ context.Context, configID string) (webhooks.CircuitDecision, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if decision, ok := m.decisions[configID]; ok {
+		return decision, nil
+	}
+	return webhooks.CircuitDecision{
+		Allowed: true,
+		Reason:  webhooks.CircuitDecisionReasonClosed,
+	}, nil
+}
+
+func (m *mockStore) RecordSuccess(_ context.Context, configID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.circuitSuccesses[configID]++
+	return nil
+}
+
+func (m *mockStore) RecordFailure(_ context.Context, configID string, _ webhooks.DeliveryFailure) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.circuitFailures[configID]++
 	return nil
 }
 
@@ -127,6 +162,7 @@ func TestProcessWebhookRetrySuccess(t *testing.T) {
 	// A new attempt should have been inserted
 	require.Len(t, store.inserted, 1)
 	require.Equal(t, webhooks.StatusAttemptSuccess, store.inserted[0].Status)
+	require.Equal(t, 1, store.circuitSuccesses[cfg.ID])
 
 	// Status should have been updated to success
 	require.Equal(t, webhooks.StatusAttemptSuccess, store.updated[webhookID])
@@ -174,6 +210,53 @@ func TestProcessWebhookRetryFailure(t *testing.T) {
 	// A new attempt should have been inserted with "to retry" status
 	require.Len(t, store.inserted, 1)
 	require.Equal(t, webhooks.StatusAttemptToRetry, store.inserted[0].Status)
+	require.Equal(t, 1, store.circuitFailures[cfg.ID])
+}
+
+func TestProcessWebhookRetrySuppressedWhenCircuitOpen(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("HTTP server should not be called while circuit is open")
+	}))
+	defer server.Close()
+
+	webhookID := "webhook-1"
+	payload, _ := json.Marshal(map[string]string{"type": "test.event"})
+
+	cfg := webhooks.Config{
+		ConfigUser: webhooks.ConfigUser{
+			Endpoint:   server.URL,
+			Secret:     webhooks.NewSecret(),
+			EventTypes: []string{"test.event"},
+		},
+		ID:     "config-1",
+		Active: true,
+	}
+
+	store := newMockStore(nil, map[string][]webhooks.Attempt{
+		webhookID: {
+			{
+				ID:           "att-1",
+				WebhookID:    webhookID,
+				Config:       cfg,
+				Payload:      string(payload),
+				StatusCode:   500,
+				RetryAttempt: 1,
+				Status:       webhooks.StatusAttemptRetrying,
+			},
+		},
+	})
+	store.decisions[cfg.ID] = webhooks.CircuitDecision{
+		Allowed: false,
+		Reason:  webhooks.CircuitDecisionReasonOpenUntil,
+	}
+
+	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour), 10)
+	require.NoError(t, err)
+
+	retrier.processWebhookRetry(context.Background(), webhookID)
+
+	require.Len(t, store.inserted, 0)
+	require.Equal(t, webhooks.StatusAttemptSuppressed, store.updated[webhookID])
 }
 
 func TestPoolProcessesBatchInParallel(t *testing.T) {

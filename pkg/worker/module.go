@@ -126,6 +126,17 @@ func processMessages(store storage.Store, httpClient *http.Client, retryPolicy w
 		for _, cfg := range cfgs {
 			logging.FromContext(ctx).Debugf("dispatching webhook to config %s at %s", cfg.ID, cfg.Endpoint)
 
+			decision, err := store.BeforeDelivery(ctx, cfg.ID)
+			if err != nil {
+				return fmt.Errorf("checking delivery circuit for config %s: %w", cfg.ID, err)
+			}
+			if !decision.Allowed {
+				logging.FromContext(ctx).Debugf(
+					"skipping webhook delivery to config %s: circuit decision=%s",
+					cfg.ID, decision.Reason)
+				continue
+			}
+
 			attempt, attemptErr := webhooks.MakeAttempt(ctx, httpClient, retryPolicy, uuid.NewString(),
 				uuid.NewString(), 0, cfg, ev.IdempotencyKey, data, false)
 			if attemptErr != nil {
@@ -150,8 +161,35 @@ func processMessages(store storage.Store, httpClient *http.Client, retryPolicy w
 				}
 				continue
 			}
+
+			if err := recordCircuitResult(ctx, store, cfg.ID, attempt); err != nil {
+				logging.FromContext(ctx).Errorf("recording delivery circuit result for config %s: %s", cfg.ID, err)
+				span.RecordError(err)
+			}
 		}
 
 		return nil
+	}
+}
+
+func recordCircuitResult(ctx context.Context, circuit webhooks.CircuitBreaker, configID string, attempt webhooks.Attempt) error {
+	if attempt.Status == webhooks.StatusAttemptSuccess {
+		return circuit.RecordSuccess(ctx, configID)
+	}
+	return circuit.RecordFailure(ctx, configID, failureFromAttempt(attempt))
+}
+
+func failureFromAttempt(attempt webhooks.Attempt) webhooks.DeliveryFailure {
+	reason := "retryable_status"
+	if attempt.Status == webhooks.StatusAttemptFailed {
+		reason = "max_retries_reached"
+	}
+	if attempt.StatusCode == 0 {
+		reason = "transport_error"
+	}
+
+	return webhooks.DeliveryFailure{
+		StatusCode: attempt.StatusCode,
+		Reason:     reason,
 	}
 }
