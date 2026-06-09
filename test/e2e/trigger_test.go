@@ -38,12 +38,12 @@ var _ = Context("Retries", func() {
 			}
 		})
 	)
-	Context("the endpoint only returning errors", func() {
+	Context("the endpoint only returning transient errors", func() {
 		var httpServer *httptest.Server
 		BeforeEach(func() {
 			httpServer = httptest.NewServer(http.HandlerFunc(
 				func(w http.ResponseWriter, _ *http.Request) {
-					http.Error(w, "error", http.StatusNotFound)
+					http.Error(w, "error", http.StatusInternalServerError)
 				}))
 			DeferCleanup(httpServer.Close)
 
@@ -90,6 +90,47 @@ var _ = Context("Retries", func() {
 
 			Eventually(getNumPendingRetryAttempts).WithArguments(db).
 				WithTimeout(10 * time.Second).
+				Should(Equal(0))
+		})
+	})
+	Context("the endpoint returning a permanent client error", func() {
+		var httpServer *httptest.Server
+		BeforeEach(func() {
+			httpServer = httptest.NewServer(http.HandlerFunc(
+				func(w http.ResponseWriter, _ *http.Request) {
+					http.Error(w, "error", http.StatusNotFound)
+				}))
+			DeferCleanup(httpServer.Close)
+
+			cfg := components.ConfigUser{
+				Endpoint: httpServer.URL,
+				EventTypes: []string{
+					"foo",
+				},
+			}
+			_, err := srv.GetValue().Client().Webhooks.V1.InsertConfig(
+				ctx,
+				cfg,
+			)
+			Expect(err).To(BeNil())
+		})
+		It("should fail immediately without scheduling any retry", func() {
+			db, err := bunconnect.OpenSQLDB(logging.TestingContext(), db.GetValue().ConnectionOptions())
+			Expect(err).ToNot(HaveOccurred())
+
+			err = natsServer.
+				GetValue().
+				Client(GinkgoT()).
+				Publish("foo", []byte(`{"type":"foo"}`))
+			Expect(err).To(BeNil())
+
+			Eventually(getNumFailedAttempts).WithArguments(db).
+				WithTimeout(5 * time.Second).
+				Should(BeNumerically(">=", 1))
+
+			// A permanent 4xx must never enter the retry queue
+			Consistently(getNumPendingRetryAttempts).WithArguments(db).
+				WithTimeout(3 * time.Second).
 				Should(Equal(0))
 		})
 	})

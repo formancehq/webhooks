@@ -58,8 +58,10 @@ func serve(cmd *cobra.Command, _ []string) error {
 		}),
 		auth.FXModuleFromFlags(cmd),
 		publish.FXModuleFromFlags(cmd, service.IsDebug(cmd)),
-		otlpmetrics.FXModuleFromFlags(cmd),
 		postgres.NewModule(*connectionOptions, service.IsDebug(cmd)),
+		// Registered after postgres so metrics stop (and flush DB-backed
+		// gauges) before the database connection is closed.
+		otlpmetrics.FXModuleFromFlags(cmd),
 		innerotlp.HttpClientModule(),
 		server.FXModuleFromFlags(cmd, listen, service.IsDebug(cmd)),
 		licence.FXModuleFromFlags(cmd, ServiceName),

@@ -17,6 +17,7 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/formancehq/go-libs/v2/logging"
+	"github.com/formancehq/go-libs/v2/otlp/otlpmetrics"
 	"github.com/formancehq/go-libs/v2/publish"
 	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/formancehq/webhooks/pkg/storage"
@@ -39,7 +40,16 @@ func StartModule(cmd *cobra.Command, retriesCron time.Duration, retryPolicy webh
 		NewRetrier,
 	))
 	options = append(options, fx.Invoke(run))
-	options = append(options, fx.Invoke(registerQueueDepthMetric))
+
+	// Only register the DB-backed queue-depth gauge when metrics are actually
+	// exported: the otlpmetrics module installs a periodic reader even with the
+	// no-op exporter, which would otherwise run the COUNT query every collect
+	// interval for a value nobody reads.
+	exporter, _ := cmd.Flags().GetString(otlpmetrics.OtelMetricsExporterFlag)
+	keepInMemory, _ := cmd.Flags().GetBool(otlpmetrics.OtelMetricsKeepInMemoryFlag)
+	if exporter != "" || keepInMemory {
+		options = append(options, fx.Invoke(registerQueueDepthMetric))
+	}
 
 	if retention.Enabled() {
 		options = append(options,
@@ -68,9 +78,9 @@ func run(lc fx.Lifecycle, w *Retrier) {
 			logging.FromContext(ctx).Debugf("stopping worker...")
 			w.Stop(ctx)
 
-			if err := w.store.Close(ctx); err != nil {
-				return fmt.Errorf("storage.Store.Close: %w", err)
-			}
+			// Note: the database connection is owned and closed by the
+			// bunconnect fx module; closing it here would shut it down before
+			// later-stopping modules (e.g. the metrics flush) are done with it.
 			return nil
 		},
 	})
