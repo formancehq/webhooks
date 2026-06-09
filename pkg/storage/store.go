@@ -36,8 +36,9 @@ type Store interface {
 	PurgeFinishedAttempts(ctx context.Context, successOlderThan, failedOlderThan time.Duration, batchSize int) (int64, error)
 	// FailOrphanedAttempts marks pending attempts ('to retry'/'retrying') whose
 	// config no longer exists as 'failed', so they stop polluting the retry queue
-	// forever. Returns the number of rows updated.
-	FailOrphanedAttempts(ctx context.Context) (int64, error)
+	// forever. Rows are updated in batches of at most batchSize. Returns the
+	// number of rows updated.
+	FailOrphanedAttempts(ctx context.Context, batchSize int) (int64, error)
 	// CountAttemptsToRetry returns the number of attempts currently queued for
 	// retry ('to retry'). Used as the retry-queue-depth gauge — the leading
 	// indicator of a retry storm.

@@ -280,8 +280,9 @@ func (s Store) PurgeFinishedAttempts(ctx context.Context, successOlderThan, fail
 		cutoff := time.Now().UTC().Add(-t.retention)
 
 		// Delete in bounded batches so a large backlog does not lock the table or
-		// generate one huge transaction. Loop until a batch deletes fewer rows
-		// than requested, meaning the backlog is drained.
+		// generate one huge transaction. SKIP LOCKED keeps concurrent retention
+		// runners (multiple worker replicas) from contending on the same rows.
+		// Loop until a batch deletes fewer rows than requested (backlog drained).
 		for {
 			res, err := s.db.NewRaw(`
 				DELETE FROM attempts
@@ -289,6 +290,7 @@ func (s Store) PurgeFinishedAttempts(ctx context.Context, successOlderThan, fail
 					SELECT id FROM attempts
 					WHERE status = ? AND updated_at < ?
 					LIMIT ?
+					FOR UPDATE SKIP LOCKED
 				)
 			`, t.status, cutoff, batchSize).Exec(ctx)
 			if err != nil {
@@ -308,23 +310,43 @@ func (s Store) PurgeFinishedAttempts(ctx context.Context, successOlderThan, fail
 	return total, nil
 }
 
-func (s Store) FailOrphanedAttempts(ctx context.Context) (int64, error) {
-	res, err := s.db.NewRaw(`
-		UPDATE attempts
-		SET status = ?, updated_at = NOW()
-		WHERE status IN (?, ?)
-		  AND NOT EXISTS (
-			SELECT 1 FROM configs c WHERE c.id = attempts.config->>'id'
-		  )
-	`, webhooks.StatusAttemptFailed, webhooks.StatusAttemptToRetry, webhooks.StatusAttemptRetrying).Exec(ctx)
-	if err != nil {
-		return 0, errors.Wrap(err, "failing orphaned attempts")
+func (s Store) FailOrphanedAttempts(ctx context.Context, batchSize int) (int64, error) {
+	if batchSize <= 0 {
+		batchSize = 1000
 	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return 0, errors.Wrap(err, "reading orphaned rows affected")
+
+	// Update in bounded batches: the production backlog of orphaned attempts
+	// reached millions of rows, and a single UPDATE over all of them would hold
+	// locks and generate one giant transaction. SKIP LOCKED keeps concurrent
+	// retention runners from contending on the same rows.
+	var total int64
+	for {
+		res, err := s.db.NewRaw(`
+			UPDATE attempts
+			SET status = ?, updated_at = NOW()
+			WHERE id IN (
+				SELECT id FROM attempts
+				WHERE status IN (?, ?)
+				  AND NOT EXISTS (
+					SELECT 1 FROM configs c WHERE c.id = attempts.config->>'id'
+				  )
+				LIMIT ?
+				FOR UPDATE SKIP LOCKED
+			)
+		`, webhooks.StatusAttemptFailed, webhooks.StatusAttemptToRetry,
+			webhooks.StatusAttemptRetrying, batchSize).Exec(ctx)
+		if err != nil {
+			return total, errors.Wrap(err, "failing orphaned attempts")
+		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return total, errors.Wrap(err, "reading orphaned rows affected")
+		}
+		total += affected
+		if affected < int64(batchSize) {
+			return total, nil
+		}
 	}
-	return affected, nil
 }
 
 func (s Store) CountAttemptsToRetry(ctx context.Context) (int64, error) {

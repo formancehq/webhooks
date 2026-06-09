@@ -39,8 +39,14 @@ func isPermanentClientError(statusCode int) bool {
 	}
 }
 
+// maxRetryAfterDelay clamps how far a Retry-After header can push the next
+// retry: the endpoint controls this value, so an absurd one must not park a
+// delivery years in the future.
+const maxRetryAfterDelay = 6 * time.Hour
+
 // parseRetryAfter interprets a Retry-After header (delay-seconds or HTTP-date)
-// relative to now. It returns false when the header is absent or unparseable.
+// relative to now, clamped to maxRetryAfterDelay. It returns false when the
+// header is absent or unparseable.
 func parseRetryAfter(header string, now time.Time) (time.Duration, bool) {
 	header = strings.TrimSpace(header)
 	if header == "" {
@@ -50,11 +56,11 @@ func parseRetryAfter(header string, now time.Time) (time.Duration, bool) {
 		if secs < 0 {
 			return 0, false
 		}
-		return time.Duration(secs) * time.Second, true
+		return min(time.Duration(secs)*time.Second, maxRetryAfterDelay), true
 	}
 	if t, err := http.ParseTime(header); err == nil {
 		if d := t.Sub(now); d > 0 {
-			return d, true
+			return min(d, maxRetryAfterDelay), true
 		}
 	}
 	return 0, false

@@ -167,3 +167,33 @@ func TestMakeAttempt_HonorsRetryAfter(t *testing.T) {
 	assert.GreaterOrEqual(t, attempt.NextRetryAfter.Sub(before), 110*time.Second,
 		"Retry-After (120s) should override the shorter backoff")
 }
+
+func TestMakeAttempt_ClampsAbsurdRetryAfter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "99999999") // ~3 years
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	cfg := webhooks.Config{
+		ConfigUser: webhooks.ConfigUser{
+			Endpoint:   server.URL,
+			Secret:     webhooks.NewSecret(),
+			EventTypes: []string{"test.event"},
+		},
+		ID:     "cfg-retry-after-clamp",
+		Active: true,
+	}
+
+	policy := &fixedBackoff{delay: 15 * time.Second}
+	before := time.Now().UTC()
+	attempt, err := webhooks.MakeAttempt(
+		context.Background(), server.Client(), policy,
+		"attempt-id", "webhook-id", 0, cfg, "", []byte(`{"type":"test.event"}`), false,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, webhooks.StatusAttemptToRetry, attempt.Status)
+	assert.LessOrEqual(t, attempt.NextRetryAfter.Sub(before), 7*time.Hour,
+		"an endpoint-controlled Retry-After must not park the delivery years in the future")
+}

@@ -8,7 +8,10 @@ import (
 	"github.com/formancehq/webhooks/pkg/storage"
 )
 
-const defaultRetentionBatchSize = 5000
+const (
+	defaultRetentionBatchSize = 5000
+	defaultRetentionPeriod    = time.Hour
+)
 
 // RetentionConfig configures the periodic cleanup of the attempts table.
 // Without it, the table grows without bound: success rows are kept forever and
@@ -42,6 +45,10 @@ func NewRetention(store storage.Store, cfg RetentionConfig) *Retention {
 	if cfg.BatchSize <= 0 {
 		cfg.BatchSize = defaultRetentionBatchSize
 	}
+	// Guard against a zero/negative period: time.NewTicker panics on <= 0.
+	if cfg.Period <= 0 {
+		cfg.Period = defaultRetentionPeriod
+	}
 	return &Retention{
 		store:  store,
 		cfg:    cfg,
@@ -70,7 +77,7 @@ func (r *Retention) Run(ctx context.Context) {
 }
 
 func (r *Retention) runOnce(ctx context.Context) {
-	if n, err := r.store.FailOrphanedAttempts(ctx); err != nil {
+	if n, err := r.store.FailOrphanedAttempts(ctx, r.cfg.BatchSize); err != nil {
 		logging.FromContext(ctx).Errorf("retention: failing orphaned attempts: %s", err)
 	} else if n > 0 {
 		logging.FromContext(ctx).Infof("retention: marked %d orphaned attempts as failed", n)

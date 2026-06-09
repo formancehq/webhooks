@@ -86,7 +86,9 @@ func (m *mockStore) UpdateOneConfig(_ context.Context, _ string, _ webhooks.Conf
 func (m *mockStore) PurgeFinishedAttempts(_ context.Context, _, _ time.Duration, _ int) (int64, error) {
 	return 0, nil
 }
-func (m *mockStore) FailOrphanedAttempts(_ context.Context) (int64, error) { return 0, nil }
+func (m *mockStore) FailOrphanedAttempts(_ context.Context, _ int) (int64, error) {
+	return 0, nil
+}
 func (m *mockStore) CountAttemptsToRetry(_ context.Context) (int64, error) { return 0, nil }
 func (m *mockStore) Close(_ context.Context) error                         { return nil }
 
