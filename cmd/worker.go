@@ -57,6 +57,7 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 	minBackOffDelay, _ := cmd.Flags().GetDuration(flag.MinBackoffDelay)
 	maxBackOffDelay, _ := cmd.Flags().GetDuration(flag.MaxBackoffDelay)
 	abortAfter, _ := cmd.Flags().GetDuration(flag.AbortAfter)
+	maxAttempts, _ := cmd.Flags().GetInt(flag.MaxAttempts)
 	topics, _ := cmd.Flags().GetStringSlice(flag.KafkaTopics)
 	listen, _ := cmd.Flags().GetString(flag.Listen)
 
@@ -78,6 +79,7 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 				minBackOffDelay,
 				maxBackOffDelay,
 				abortAfter,
+				maxAttempts,
 			),
 			retryBatchSize,
 			service.IsDebug(cmd),

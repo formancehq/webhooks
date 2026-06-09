@@ -12,9 +12,10 @@ const (
 	Listen   = "listen"
 	Worker   = "worker"
 
-	RetryPeriod    = "retry-period"
-	RetryBatchSize = "retry-batch-size"
-	AbortAfter     = "abort-after"
+	RetryPeriod     = "retry-period"
+	RetryBatchSize  = "retry-batch-size"
+	AbortAfter      = "abort-after"
+	MaxAttempts     = "max-attempts"
 	MinBackoffDelay = "min-backoff-delay"
 	MaxBackoffDelay = "max-backoff-delay"
 
@@ -33,6 +34,8 @@ const (
 var (
 	DefaultRetryPeriod    = 3 * time.Second
 	DefaultRetryBatchSize = 50
+	DefaultAbortAfter     = 72 * time.Hour
+	DefaultMaxAttempts    = 15
 )
 
 func Init(flagSet *pflag.FlagSet) {
@@ -45,7 +48,8 @@ func Init(flagSet *pflag.FlagSet) {
 
 	flagSet.StringSlice(KafkaTopics, []string{DefaultKafkaTopic}, "Kafka topics")
 
-	flagSet.Duration(AbortAfter, 30*24*time.Hour, "consider a webhook as failed after retrying it for this duration.")
+	flagSet.Duration(AbortAfter, DefaultAbortAfter, "consider a webhook as failed after retrying it for this duration.")
+	flagSet.Int(MaxAttempts, DefaultMaxAttempts, "hard cap on delivery attempts per webhook (0 disables the cap, leaving abort-after as the only bound)")
 	flagSet.Duration(MinBackoffDelay, time.Minute, "minimum backoff delay")
 	flagSet.Duration(MaxBackoffDelay, time.Hour, "maximum backoff delay")
 	flagSet.Bool(AutoMigrate, false, "auto migrate database")

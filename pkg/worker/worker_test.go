@@ -119,7 +119,7 @@ func TestProcessWebhookRetrySuccess(t *testing.T) {
 		},
 	})
 
-	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour), 10)
+	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour, 0), 10)
 	require.NoError(t, err)
 
 	retrier.processWebhookRetry(context.Background(), webhookID)
@@ -166,7 +166,7 @@ func TestProcessWebhookRetryFailure(t *testing.T) {
 		},
 	})
 
-	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour), 10)
+	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour, 0), 10)
 	require.NoError(t, err)
 
 	retrier.processWebhookRetry(context.Background(), webhookID)
@@ -228,7 +228,7 @@ func TestPoolProcessesBatchInParallel(t *testing.T) {
 
 	store := newMockStore(webhookIDs, attempts)
 
-	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour), 10)
+	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour, 0), 10)
 	require.NoError(t, err)
 
 	// Manually claim and process (simulating one tick)
@@ -260,7 +260,7 @@ func TestProcessWebhookRetryNoAttempts(t *testing.T) {
 
 	store := newMockStore(nil, map[string][]webhooks.Attempt{})
 
-	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour), 10)
+	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour, 0), 10)
 	require.NoError(t, err)
 
 	// Should not panic or make HTTP calls
@@ -300,7 +300,7 @@ func TestProcessWebhookRetryBadPayload(t *testing.T) {
 		},
 	})
 
-	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour), 10)
+	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour, 0), 10)
 	require.NoError(t, err)
 
 	// Should not panic, should log error and return

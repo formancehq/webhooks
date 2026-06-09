@@ -9,7 +9,7 @@ import (
 )
 
 func TestExponential_Nominal(t *testing.T) {
-	policy := NewExponential(time.Minute, time.Hour, 24*time.Hour)
+	policy := NewExponential(time.Minute, time.Hour, 24*time.Hour, 0)
 	wantDurations := []time.Duration{
 		time.Minute,
 		2 * time.Minute,
@@ -36,12 +36,25 @@ func TestExponential_Limit(t *testing.T) {
 	// Attempt:             0    1    2
 	// Delay:               1m   2m   X
 	// sinceFirstAttempt:   1m   3m   X
-	policy := NewExponential(time.Minute, 5*time.Minute, 3*time.Minute)
+	policy := NewExponential(time.Minute, 5*time.Minute, 3*time.Minute, 0)
 
 	delay, err := policy.GetRetryDelay(1)
 	assert.NoError(t, err)
 	assert.Equal(t, 2*time.Minute, delay)
 
 	_, err = policy.GetRetryDelay(2)
+	assert.ErrorIs(t, err, ErrMaxAttemptsReached)
+}
+
+func TestExponential_MaxAttemptsCap(t *testing.T) {
+	// abort-after is huge, so only the attempt cap (3) can stop retries.
+	policy := NewExponential(time.Minute, time.Hour, 100*24*time.Hour, 3)
+
+	for attempt := range 3 {
+		_, err := policy.GetRetryDelay(attempt)
+		assert.NoError(t, err, "attempt %d should still be retryable", attempt)
+	}
+
+	_, err := policy.GetRetryDelay(3)
 	assert.ErrorIs(t, err, ErrMaxAttemptsReached)
 }
