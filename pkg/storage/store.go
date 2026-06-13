@@ -34,11 +34,11 @@ type Store interface {
 	// returns the total number of rows deleted. A retention <= 0 disables purging
 	// for that status.
 	PurgeFinishedAttempts(ctx context.Context, successOlderThan, failedOlderThan time.Duration, batchSize int) (int64, error)
-	// FailOrphanedAttempts marks pending attempts ('to retry'/'retrying') whose
-	// config no longer exists as 'failed', so they stop polluting the retry queue
-	// forever. Rows are updated in batches of at most batchSize. Returns the
-	// number of rows updated.
-	FailOrphanedAttempts(ctx context.Context, batchSize int) (int64, error)
+	// FailUnclaimableAttempts marks pending attempts ('to retry'/'retrying')
+	// whose config no longer exists or is inactive as 'failed', so they stop
+	// polluting the retry queue forever. Rows are updated in batches of at most
+	// batchSize. Returns the number of rows updated.
+	FailUnclaimableAttempts(ctx context.Context, batchSize int) (int64, error)
 	// CountAttemptsToRetry returns the number of attempts currently queued for
 	// retry ('to retry'). Used as the retry-queue-depth gauge — the leading
 	// indicator of a retry storm.

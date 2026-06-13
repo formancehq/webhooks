@@ -154,7 +154,36 @@ func TestPurgeFinishedAttemptsBatches(t *testing.T) {
 	require.EqualValues(t, 5, deleted)
 }
 
-func TestFailOrphanedAttempts(t *testing.T) {
+func TestRetentionIndexesExist(t *testing.T) {
+	_, db := newTestStoreWithDB(t)
+	ctx := context.Background()
+
+	cases := []struct {
+		name   string
+		status string
+	}{
+		{"idx_attempts_retention_success", "success"},
+		{"idx_attempts_retention_failed", "failed"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var indexDef string
+			err := db.NewRaw(`
+				SELECT indexdef
+				FROM pg_indexes
+				WHERE tablename = 'attempts' AND indexname = ?
+			`, tc.name).Scan(ctx, &indexDef)
+			require.NoError(t, err)
+			require.Contains(t, indexDef, "updated_at")
+			require.Contains(t, indexDef, "id")
+			require.Contains(t, indexDef, "WHERE")
+			require.Contains(t, indexDef, tc.status)
+		})
+	}
+}
+
+func TestFailUnclaimableAttempts(t *testing.T) {
 	store, db := newTestStoreWithDB(t)
 	ctx := context.Background()
 
@@ -163,6 +192,15 @@ func TestFailOrphanedAttempts(t *testing.T) {
 	// Live config: its pending attempts must be preserved.
 	liveCfg := insertConfig(t, store)
 	liveToRetry := insertAttemptAged(t, store, liveCfg, webhooks.StatusAttemptToRetry, now)
+
+	// Inactive config: retry claim skips it, so its pending attempts must be
+	// failed by retention instead of staying in the retry queue forever.
+	inactiveCfg := insertConfig(t, store)
+	_, err := store.UpdateOneConfigActivation(ctx, inactiveCfg.ID, false)
+	require.NoError(t, err)
+	inactiveToRetry := insertAttemptAged(t, store, inactiveCfg, webhooks.StatusAttemptToRetry, now)
+	inactiveRetrying := insertAttemptAged(t, store, inactiveCfg, webhooks.StatusAttemptRetrying, now)
+	inactiveSuccess := insertAttemptAged(t, store, inactiveCfg, webhooks.StatusAttemptSuccess, now)
 
 	// Orphan config: never persisted, simulating a deleted config snapshotted
 	// in the attempt's JSONB column.
@@ -175,12 +213,15 @@ func TestFailOrphanedAttempts(t *testing.T) {
 	orphanRetrying := insertAttemptAged(t, store, orphanCfg, webhooks.StatusAttemptRetrying, now)
 	orphanSuccess := insertAttemptAged(t, store, orphanCfg, webhooks.StatusAttemptSuccess, now)
 
-	updated, err := store.FailOrphanedAttempts(ctx, 1) // batchSize 1 to exercise the loop
+	updated, err := store.FailUnclaimableAttempts(ctx, 1) // batchSize 1 to exercise the loop
 	require.NoError(t, err)
-	require.EqualValues(t, 2, updated, "only pending orphan attempts should be failed")
+	require.EqualValues(t, 4, updated, "only pending inactive/deleted config attempts should be failed")
 
 	statuses := attemptStatusesByID(t, db)
 	require.Equal(t, webhooks.StatusAttemptToRetry, statuses[liveToRetry], "live config attempts must be preserved")
+	require.Equal(t, webhooks.StatusAttemptFailed, statuses[inactiveToRetry])
+	require.Equal(t, webhooks.StatusAttemptFailed, statuses[inactiveRetrying])
+	require.Equal(t, webhooks.StatusAttemptSuccess, statuses[inactiveSuccess], "terminal inactive-config attempts must not be rewritten")
 	require.Equal(t, webhooks.StatusAttemptFailed, statuses[orphanToRetry])
 	require.Equal(t, webhooks.StatusAttemptFailed, statuses[orphanRetrying])
 	require.Equal(t, webhooks.StatusAttemptSuccess, statuses[orphanSuccess], "terminal orphan attempts must not be rewritten")

@@ -81,7 +81,7 @@ Key design consequence: **the current state of a delivery is smeared across mult
 3. **Parallel processing** via a bounded `pond` pool: for each webhook, re-read the `retrying` attempts, re-send with `MakeAttempt` at `retry_attempt + 1`, insert the new attempt, then update the claimed rows to the outcome status.
 4. Sleep, repeat.
 
-Backoff is exponential without jitter ([pkg/backoff/exponential.go](pkg/backoff/exponential.go)): `min-backoff-delay` (1m) doubling up to `max-backoff-delay` (1h), aborting to `failed` once cumulative elapsed time exceeds `--abort-after` (default 30 days).
+Backoff is exponential without jitter ([pkg/backoff/exponential.go](pkg/backoff/exponential.go)): `min-backoff-delay` (1m) doubling up to `max-backoff-delay` (1h), aborting to `failed` once cumulative elapsed time exceeds `--abort-after` (default 72h) or `--max-attempts` is reached (default 15 attempts).
 
 ### 1.5 Security model
 
@@ -100,7 +100,7 @@ Backoff is exponential without jitter ([pkg/backoff/exponential.go](pkg/backoff/
 
 ## 2. Known problems & limitations
 
-Ordered by severity. References point at the code as of today. The items marked **(prod)** have caused real production incidents — see [§2.0](#20-the-core-problem-retry-storm--backlog-amplification-prod).
+Ordered by severity. References point at the code that produced the incidents; the Phase 1 fixes in this PR mitigate the retry-storm items called out below. The items marked **(prod)** have caused real production incidents — see [§2.0](#20-the-core-problem-retry-storm--backlog-amplification-prod).
 
 ### 2.0 The core problem: retry-storm → backlog amplification (prod)
 
@@ -109,13 +109,16 @@ This is the recurring, money-burning failure mode behind every webhooks incident
 > A dead or misconfigured customer endpoint (wrong credentials, decommissioned URL, expired tunnel) → **every error is retried as if transient** → attempts pile up in `to retry` → the retry loop re-sends + the `attempts` table explodes → PostgreSQL/RDS load, **cross-AZ replication traffic, and AWS cost** blow up, drowning observability in noise.
 
 **Root cause 1 — no retryable/non-retryable distinction.**
-`MakeAttempt` treats *any* non-2xx response as `to retry` ([pkg/attempt.go:106-118](pkg/attempt.go:106)). A `403` (bad credentials), `404` (gone), or `405` (wrong method) is **permanent** but gets retried for the full `--abort-after` window anyway. There is no client-error short-circuit, no `Retry-After` honoring for `429`.
+Mitigated in this PR by terminal 4xx classification.
+Previously, `MakeAttempt` treated *any* non-2xx response as `to retry` ([pkg/attempt.go:106-118](pkg/attempt.go:106)). A `403` (bad credentials), `404` (gone), or `405` (wrong method) is **permanent** but was retried for the full `--abort-after` window anyway. There was no client-error short-circuit, no `Retry-After` honoring for `429`.
 
 **Root cause 2 — no circuit breaker, no max-attempt cap; `abort-after`=30d is the *only* bound.**
-With `min-backoff=1m` doubling to a `max-backoff=1h` cap, the delay reaches 1h after ~7 retries (~2h cumulative), then fires **once per hour for 30 days ≈ 718 more** → **~724 attempts per dead endpoint**. This exactly matches the observed Tenora "retry count up to 724". *This is why guardrails never bounded Tenora/Paynovate: there are none beyond the 30-day timer.*
+Partially mitigated in this PR by `--max-attempts` (default 15) and `--abort-after=72h`; the per-endpoint circuit breaker is still future work.
+With the previous `min-backoff=1m` doubling to a `max-backoff=1h` cap, the delay reached 1h after ~7 retries (~2h cumulative), then fired **once per hour for 30 days ≈ 718 more** → **~724 attempts per dead endpoint**. This exactly matches the observed Tenora "retry count up to 724". *This is why guardrails never bounded Tenora/Paynovate: there were none beyond the 30-day timer.*
 
 **Root cause 3 — orphaned attempts loop and are never reclaimed or purged.**
-Deleting/deactivating a config leaves `to retry` rows that the active-config join skips but nothing ever transitions to `failed` ([§2.1](#21-reliability--delivery-semantics)). Combined with zero retention ([§2.3](#23-scalability--data-growth)), the table only grows.
+Mitigated in this PR by retention cleanup for deleted and inactive configs.
+Deleting/deactivating a config used to leave `to retry` rows that the active-config join skipped but nothing ever transitioned to `failed` ([§2.1](#21-reliability--delivery-semantics)). Combined with zero retention ([§2.3](#23-scalability--data-growth)), the table only grew.
 
 **Production evidence:**
 
@@ -322,7 +325,11 @@ Key flags:
       --retry-batch-size int                 Webhook IDs claimed per tick (default 50)
       --min-backoff-delay duration           Minimum backoff delay (default 1m)
       --max-backoff-delay duration           Maximum backoff delay (default 1h)
-      --abort-after duration                 Mark failed after retrying this long (default 720h)
+      --abort-after duration                 Mark failed after retrying this long (default 72h)
+      --max-attempts int                     Hard cap on delivery attempts per webhook (default 15)
+      --retention-period duration            Attempts-table cleanup interval (default 1h)
+      --retention-success-delay duration     Retain success attempts before purging (default 720h)
+      --retention-failed-delay duration      Retain failed attempts before purging (default 2160h)
       --auto-migrate                         Run DB migrations on startup
       --storage-postgres-conn-string string  Postgres connection string
 ```

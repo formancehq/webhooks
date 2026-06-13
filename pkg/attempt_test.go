@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	webhooks "github.com/formancehq/webhooks/pkg"
+	"github.com/formancehq/webhooks/pkg/backoff"
 )
 
 type fixedBackoff struct {
@@ -83,6 +84,33 @@ func TestMakeAttempt_TransportError_MaxRetriesExceeded(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, webhooks.StatusAttemptFailed, attempt.Status)
+}
+
+func TestMakeAttempt_MaxAttemptsOneDoesNotScheduleRetry(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cfg := webhooks.Config{
+		ConfigUser: webhooks.ConfigUser{
+			Endpoint:   server.URL,
+			Secret:     webhooks.NewSecret(),
+			EventTypes: []string{"test.event"},
+		},
+		ID:     "cfg-max-attempts-one",
+		Active: true,
+	}
+
+	attempt, err := webhooks.MakeAttempt(
+		context.Background(), server.Client(),
+		backoff.NewExponential(time.Second, time.Minute, time.Hour, 1),
+		"attempt-id", "webhook-id", 0, cfg, "", []byte(`{"type":"test.event"}`), false,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, webhooks.StatusAttemptFailed, attempt.Status)
+	assert.True(t, attempt.NextRetryAfter.IsZero(), "max-attempts=1 must not schedule a retry")
 }
 
 func TestMakeAttempt_StatusClassification(t *testing.T) {

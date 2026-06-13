@@ -124,6 +124,28 @@ func Migrate(ctx context.Context, db *bun.DB) error {
 				return errors.Wrap(err, "dropping redundant partial index for retry polling")
 			},
 		},
+		migrations.Migration{
+			Name: "Add partial indexes for attempts retention",
+			Up: func(ctx context.Context, tx bun.IDB) error {
+				if _, err := tx.ExecContext(ctx, `
+							CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_attempts_retention_success
+							ON attempts (updated_at, id)
+							WHERE status = 'success'
+						`); err != nil {
+					return errors.Wrap(err, "creating partial index for success attempts retention")
+				}
+
+				if _, err := tx.ExecContext(ctx, `
+							CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_attempts_retention_failed
+							ON attempts (updated_at, id)
+							WHERE status = 'failed'
+						`); err != nil {
+					return errors.Wrap(err, "creating partial index for failed attempts retention")
+				}
+
+				return nil
+			},
+		},
 	)
 
 	return migrator.Up(ctx)

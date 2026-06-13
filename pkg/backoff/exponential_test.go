@@ -50,11 +50,25 @@ func TestExponential_MaxAttemptsCap(t *testing.T) {
 	// abort-after is huge, so only the attempt cap (3) can stop retries.
 	policy := NewExponential(time.Minute, time.Hour, 100*24*time.Hour, 3)
 
-	for attempt := range 3 {
+	for attempt := range 2 {
 		_, err := policy.GetRetryDelay(attempt)
-		assert.NoError(t, err, "attempt %d should still be retryable", attempt)
+		assert.NoError(t, err, "attempt %d should be allowed to schedule another retry", attempt)
 	}
 
-	_, err := policy.GetRetryDelay(3)
+	_, err := policy.GetRetryDelay(2)
 	assert.ErrorIs(t, err, ErrMaxAttemptsReached)
+}
+
+func TestExponential_CanRetryAttemptOnlyChecksAttemptCap(t *testing.T) {
+	policy := NewExponential(time.Minute, time.Hour, 2*time.Minute, 3)
+	limiter, ok := policy.(interface {
+		CanRetryAttempt(int) error
+	})
+	assert.True(t, ok)
+
+	assert.NoError(t, limiter.CanRetryAttempt(2))
+	assert.ErrorIs(t, limiter.CanRetryAttempt(3), ErrMaxAttemptsReached)
+
+	_, err := policy.GetRetryDelay(1)
+	assert.ErrorIs(t, err, ErrMaxAttemptsReached, "abort-after still applies when scheduling a future retry")
 }

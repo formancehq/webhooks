@@ -15,3 +15,7 @@ type NoRetry struct{}
 func (n *NoRetry) GetRetryDelay(attemptNumber int) (time.Duration, error) {
 	return 0, ErrMaxAttemptsReached
 }
+
+func (n *NoRetry) CanRetryAttempt(attemptNumber int) error {
+	return ErrMaxAttemptsReached
+}

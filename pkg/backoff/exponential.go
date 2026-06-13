@@ -31,7 +31,7 @@ type exponential struct {
 }
 
 func (e *exponential) GetRetryDelay(attemptNumber int) (time.Duration, error) {
-	if e.maxAttempts > 0 && attemptNumber >= e.maxAttempts {
+	if e.maxAttempts > 0 && attemptNumber+1 >= e.maxAttempts {
 		return 0, ErrMaxAttemptsReached
 	}
 
@@ -48,4 +48,11 @@ func (e *exponential) GetRetryDelay(attemptNumber int) (time.Duration, error) {
 		return 0, ErrMaxAttemptsReached
 	}
 	return delay, nil
+}
+
+func (e *exponential) CanRetryAttempt(attemptNumber int) error {
+	if e.maxAttempts > 0 && attemptNumber >= e.maxAttempts {
+		return ErrMaxAttemptsReached
+	}
+	return nil
 }

@@ -15,8 +15,8 @@ const (
 
 // RetentionConfig configures the periodic cleanup of the attempts table.
 // Without it, the table grows without bound: success rows are kept forever and
-// attempts of deleted configs loop in the retry queue. In production this drove
-// the table to 100+ GB and dominated cross-AZ RDS replication cost.
+// attempts of deleted or inactive configs stay in the retry queue. In production
+// this drove the table to 100+ GB and dominated cross-AZ RDS replication cost.
 type RetentionConfig struct {
 	// Period between cleanup runs.
 	Period time.Duration
@@ -34,7 +34,7 @@ func (c RetentionConfig) Enabled() bool {
 }
 
 // Retention periodically purges old terminal attempts and reclaims attempts
-// whose config has been deleted.
+// whose config has been deleted or deactivated.
 type Retention struct {
 	store  storage.Store
 	cfg    RetentionConfig
@@ -77,10 +77,10 @@ func (r *Retention) Run(ctx context.Context) {
 }
 
 func (r *Retention) runOnce(ctx context.Context) {
-	if n, err := r.store.FailOrphanedAttempts(ctx, r.cfg.BatchSize); err != nil {
-		logging.FromContext(ctx).Errorf("retention: failing orphaned attempts: %s", err)
+	if n, err := r.store.FailUnclaimableAttempts(ctx, r.cfg.BatchSize); err != nil {
+		logging.FromContext(ctx).Errorf("retention: failing unclaimable attempts: %s", err)
 	} else if n > 0 {
-		logging.FromContext(ctx).Infof("retention: marked %d orphaned attempts as failed", n)
+		logging.FromContext(ctx).Infof("retention: marked %d unclaimable attempts as failed", n)
 	}
 
 	if n, err := r.store.PurgeFinishedAttempts(ctx, r.cfg.SuccessDelay, r.cfg.FailedDelay, r.cfg.BatchSize); err != nil {

@@ -140,6 +140,18 @@ func (w *Retrier) processWebhookRetry(ctx context.Context, webhookID string) {
 	}
 
 	newAttemptNb := atts[0].RetryAttempt + 1
+	if limiter, ok := w.retryPolicy.(webhooks.RetryAttemptLimiter); ok {
+		if err := limiter.CanRetryAttempt(newAttemptNb); err != nil {
+			logging.FromContext(ctx).Debugf("retry cap reached for webhook %s at attempt %d: %s",
+				webhookID, newAttemptNb, err)
+			if _, updateErr := w.store.UpdateAttemptsStatus(ctx, webhookID, webhooks.StatusAttemptFailed); updateErr != nil {
+				logging.FromContext(ctx).Errorf("marking retry capped attempts failed for webhook %s: %s",
+					webhookID, updateErr)
+			}
+			return
+		}
+	}
+
 	attempt, err := webhooks.MakeAttempt(ctx, w.httpClient, w.retryPolicy, uuid.NewString(),
 		webhookID, newAttemptNb, atts[0].Config, ev.IdempotencyKey, []byte(atts[0].Payload), false)
 	if err != nil {

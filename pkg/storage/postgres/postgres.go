@@ -310,12 +310,12 @@ func (s Store) PurgeFinishedAttempts(ctx context.Context, successOlderThan, fail
 	return total, nil
 }
 
-func (s Store) FailOrphanedAttempts(ctx context.Context, batchSize int) (int64, error) {
+func (s Store) FailUnclaimableAttempts(ctx context.Context, batchSize int) (int64, error) {
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
 
-	// Update in bounded batches: the production backlog of orphaned attempts
+	// Update in bounded batches: the production backlog of unclaimable attempts
 	// reached millions of rows, and a single UPDATE over all of them would hold
 	// locks and generate one giant transaction. SKIP LOCKED keeps concurrent
 	// retention runners from contending on the same rows.
@@ -328,7 +328,10 @@ func (s Store) FailOrphanedAttempts(ctx context.Context, batchSize int) (int64, 
 				SELECT id FROM attempts
 				WHERE status IN (?, ?)
 				  AND NOT EXISTS (
-					SELECT 1 FROM configs c WHERE c.id = attempts.config->>'id'
+					SELECT 1
+					FROM configs c
+					WHERE c.id = attempts.config->>'id'
+					  AND c.active = true
 				  )
 				LIMIT ?
 				FOR UPDATE SKIP LOCKED
@@ -336,11 +339,11 @@ func (s Store) FailOrphanedAttempts(ctx context.Context, batchSize int) (int64, 
 		`, webhooks.StatusAttemptFailed, webhooks.StatusAttemptToRetry,
 			webhooks.StatusAttemptRetrying, batchSize).Exec(ctx)
 		if err != nil {
-			return total, errors.Wrap(err, "failing orphaned attempts")
+			return total, errors.Wrap(err, "failing unclaimable attempts")
 		}
 		affected, err := res.RowsAffected()
 		if err != nil {
-			return total, errors.Wrap(err, "reading orphaned rows affected")
+			return total, errors.Wrap(err, "reading unclaimable rows affected")
 		}
 		total += affected
 		if affected < int64(batchSize) {
