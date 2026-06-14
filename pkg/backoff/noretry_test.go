@@ -2,6 +2,7 @@ package backoff
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -16,4 +17,11 @@ func TestNoRetry(t *testing.T) {
 	})
 	assert.True(t, ok)
 	assert.ErrorIs(t, limiter.CanRetryAttempt(0), ErrMaxAttemptsReached)
+
+	delayLimiter, ok := policy.(interface {
+		LimitRetryDelay(int, time.Duration) (time.Duration, error)
+	})
+	assert.True(t, ok)
+	_, err = delayLimiter.LimitRetryDelay(0, time.Second)
+	assert.ErrorIs(t, err, ErrMaxAttemptsReached)
 }

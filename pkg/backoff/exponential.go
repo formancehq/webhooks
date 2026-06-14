@@ -35,16 +35,8 @@ func (e *exponential) GetRetryDelay(attemptNumber int) (time.Duration, error) {
 		return 0, ErrMaxAttemptsReached
 	}
 
-	delay := e.minRetryDelay
-	sinceFirstAttempt := delay
-	for i := 0; i < attemptNumber; i++ {
-		delay <<= 1
-		if delay > e.maxRetryDelay {
-			delay = e.maxRetryDelay
-		}
-		sinceFirstAttempt += delay
-	}
-	if sinceFirstAttempt > e.abortAfterDelay {
+	delay := e.retryDelayForAttempt(attemptNumber)
+	if e.elapsedBeforeAttempt(attemptNumber)+delay > e.abortAfterDelay {
 		return 0, ErrMaxAttemptsReached
 	}
 	return delay, nil
@@ -55,4 +47,30 @@ func (e *exponential) CanRetryAttempt(attemptNumber int) error {
 		return ErrMaxAttemptsReached
 	}
 	return nil
+}
+
+func (e *exponential) LimitRetryDelay(attemptNumber int, delay time.Duration) (time.Duration, error) {
+	if e.elapsedBeforeAttempt(attemptNumber)+delay > e.abortAfterDelay {
+		return 0, ErrMaxAttemptsReached
+	}
+	return delay, nil
+}
+
+func (e *exponential) retryDelayForAttempt(attemptNumber int) time.Duration {
+	delay := e.minRetryDelay
+	for i := 0; i < attemptNumber; i++ {
+		delay <<= 1
+		if delay > e.maxRetryDelay {
+			delay = e.maxRetryDelay
+		}
+	}
+	return delay
+}
+
+func (e *exponential) elapsedBeforeAttempt(attemptNumber int) time.Duration {
+	var elapsed time.Duration
+	for i := 0; i < attemptNumber; i++ {
+		elapsed += e.retryDelayForAttempt(i)
+	}
+	return elapsed
 }

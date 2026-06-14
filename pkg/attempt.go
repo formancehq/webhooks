@@ -183,8 +183,17 @@ func classifyResponse(ctx context.Context, resp *http.Response, doErr error, ret
 	}
 
 	// Respect an explicit Retry-After (429/503) when it asks us to wait longer
-	// than our computed backoff.
+	// than our computed backoff, but never let endpoint-controlled delays bypass
+	// the retry policy window.
 	if retryAfter, ok := parseRetryAfter(resp.Header.Get("Retry-After"), ts); ok && retryAfter > delay {
+		if limiter, ok := retryPolicy.(RetryDelayLimiter); ok {
+			var limitErr error
+			retryAfter, limitErr = limiter.LimitRetryDelay(attemptNb, retryAfter)
+			if limitErr != nil {
+				attempt.Status = StatusAttemptFailed
+				return attempt, nil
+			}
+		}
 		delay = retryAfter
 	}
 

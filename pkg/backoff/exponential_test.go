@@ -72,3 +72,18 @@ func TestExponential_CanRetryAttemptOnlyChecksAttemptCap(t *testing.T) {
 	_, err := policy.GetRetryDelay(1)
 	assert.ErrorIs(t, err, ErrMaxAttemptsReached, "abort-after still applies when scheduling a future retry")
 }
+
+func TestExponential_LimitRetryDelay(t *testing.T) {
+	policy := NewExponential(time.Minute, time.Hour, 10*time.Minute, 0)
+	limiter, ok := policy.(interface {
+		LimitRetryDelay(int, time.Duration) (time.Duration, error)
+	})
+	assert.True(t, ok)
+
+	delay, err := limiter.LimitRetryDelay(1, 8*time.Minute)
+	assert.NoError(t, err)
+	assert.Equal(t, 8*time.Minute, delay)
+
+	_, err = limiter.LimitRetryDelay(1, 10*time.Minute)
+	assert.ErrorIs(t, err, ErrMaxAttemptsReached)
+}

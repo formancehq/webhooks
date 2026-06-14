@@ -196,6 +196,34 @@ func TestMakeAttempt_HonorsRetryAfter(t *testing.T) {
 		"Retry-After (120s) should override the shorter backoff")
 }
 
+func TestMakeAttempt_RetryAfterCannotExceedAbortAfterWindow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "21600")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	cfg := webhooks.Config{
+		ConfigUser: webhooks.ConfigUser{
+			Endpoint:   server.URL,
+			Secret:     webhooks.NewSecret(),
+			EventTypes: []string{"test.event"},
+		},
+		ID:     "cfg-retry-after-abort-after",
+		Active: true,
+	}
+
+	attempt, err := webhooks.MakeAttempt(
+		context.Background(), server.Client(),
+		backoff.NewExponential(time.Second, time.Hour, 3*time.Second, 0),
+		"attempt-id", "webhook-id", 0, cfg, "", []byte(`{"type":"test.event"}`), false,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, webhooks.StatusAttemptFailed, attempt.Status)
+	assert.True(t, attempt.NextRetryAfter.IsZero(), "Retry-After beyond abort-after must not schedule a retry")
+}
+
 func TestMakeAttempt_ClampsAbsurdRetryAfter(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "99999999") // ~3 years
