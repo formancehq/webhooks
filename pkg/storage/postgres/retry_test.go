@@ -86,6 +86,50 @@ func insertAttemptWithConfig(t *testing.T, db storage.Store, webhookID string, c
 	require.NoError(t, db.InsertOneAttempt(ctx, att))
 }
 
+func TestFindFirstAttemptCreatedAtByWebhookID(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	webhookID := uuid.NewString()
+	cfg, err := store.InsertOneConfig(ctx, webhooks.ConfigUser{
+		Endpoint:   "http://localhost:8080",
+		Secret:     webhooks.NewSecret(),
+		EventTypes: []string{"test.event"},
+	})
+	require.NoError(t, err)
+
+	first := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Microsecond)
+	second := first.Add(time.Hour)
+	payload, _ := json.Marshal(map[string]string{"type": "test.event"})
+
+	require.NoError(t, store.InsertOneAttempt(ctx, webhooks.Attempt{
+		ID:           uuid.NewString(),
+		WebhookID:    webhookID,
+		CreatedAt:    second,
+		UpdatedAt:    second,
+		Config:       cfg,
+		Payload:      string(payload),
+		StatusCode:   500,
+		RetryAttempt: 1,
+		Status:       webhooks.StatusAttemptToRetry,
+	}))
+	require.NoError(t, store.InsertOneAttempt(ctx, webhooks.Attempt{
+		ID:           uuid.NewString(),
+		WebhookID:    webhookID,
+		CreatedAt:    first,
+		UpdatedAt:    first,
+		Config:       cfg,
+		Payload:      string(payload),
+		StatusCode:   500,
+		RetryAttempt: 0,
+		Status:       webhooks.StatusAttemptFailed,
+	}))
+
+	got, err := store.FindFirstAttemptCreatedAtByWebhookID(ctx, webhookID)
+	require.NoError(t, err)
+	require.Equal(t, first, got.UTC())
+}
+
 func TestClaimWebhookIDsToRetry(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()

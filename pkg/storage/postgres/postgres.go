@@ -153,6 +153,23 @@ func (s Store) FindAttemptsToRetryByWebhookID(ctx context.Context, webhookID str
 	return res, nil
 }
 
+func (s Store) FindFirstAttemptCreatedAtByWebhookID(ctx context.Context, webhookID string) (time.Time, error) {
+	var att webhooks.Attempt
+	if err := s.db.NewSelect().Model(&att).
+		Column("created_at").
+		Where("webhook_id = ?", webhookID).
+		Order("created_at ASC").
+		Limit(1).
+		Scan(ctx); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return time.Time{}, storage.ErrWebhookIDNotFound
+		}
+		return time.Time{}, errors.Wrap(err, "finding first attempt created_at")
+	}
+
+	return att.CreatedAt, nil
+}
+
 func (s Store) FindWebhookIDsToRetry(ctx context.Context, limit int) ([]string, error) {
 	// Raw SQL is required here: the atomic claim pattern (SELECT + UPDATE in a single
 	// statement via CTE) cannot be expressed with Bun's query builder.

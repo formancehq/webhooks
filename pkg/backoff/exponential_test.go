@@ -87,3 +87,14 @@ func TestExponential_LimitRetryDelay(t *testing.T) {
 	_, err = limiter.LimitRetryDelay(1, 10*time.Minute)
 	assert.ErrorIs(t, err, ErrMaxAttemptsReached)
 }
+
+func TestExponential_LimitRetryWindow(t *testing.T) {
+	policy := NewExponential(time.Minute, time.Hour, 10*time.Minute, 0)
+	limiter, ok := policy.(interface {
+		LimitRetryWindow(time.Duration) error
+	})
+	assert.True(t, ok)
+
+	assert.NoError(t, limiter.LimitRetryWindow(10*time.Minute))
+	assert.ErrorIs(t, limiter.LimitRetryWindow(10*time.Minute+time.Nanosecond), ErrMaxAttemptsReached)
+}

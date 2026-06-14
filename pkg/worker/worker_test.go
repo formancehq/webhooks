@@ -48,6 +48,21 @@ func (m *mockStore) FindAttemptsToRetryByWebhookID(_ context.Context, webhookID 
 	return m.attempts[webhookID], nil
 }
 
+func (m *mockStore) FindFirstAttemptCreatedAtByWebhookID(_ context.Context, webhookID string) (time.Time, error) {
+	atts := m.attempts[webhookID]
+	if len(atts) == 0 {
+		return time.Time{}, nil
+	}
+
+	first := atts[0].CreatedAt
+	for _, att := range atts[1:] {
+		if first.IsZero() || (!att.CreatedAt.IsZero() && att.CreatedAt.Before(first)) {
+			first = att.CreatedAt
+		}
+	}
+	return first, nil
+}
+
 func (m *mockStore) InsertOneAttempt(_ context.Context, att webhooks.Attempt) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -181,6 +196,8 @@ func TestProcessWebhookRetryFailure(t *testing.T) {
 	// A new attempt should have been inserted with "to retry" status
 	require.Len(t, store.inserted, 1)
 	require.Equal(t, webhooks.StatusAttemptToRetry, store.inserted[0].Status)
+	require.Equal(t, webhooks.StatusAttemptFailed, store.updated[webhookID],
+		"claimed attempts must be terminalized so only the newly inserted row remains queued")
 }
 
 func TestProcessWebhookRetryDoesNotCallEndpointAfterMaxAttempts(t *testing.T) {

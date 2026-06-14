@@ -88,13 +88,39 @@ type Attempt struct {
 	NextRetryAfter time.Time `json:"nextRetryAfter,omitempty" bun:"next_retry_after,nullzero"`
 }
 
-func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy BackoffPolicy, id, webhookID string, attemptNb int, cfg Config, idempotencyKey string, payload []byte, isTest bool) (Attempt, error) {
+type attemptOptions struct {
+	firstAttemptAt time.Time
+}
+
+type AttemptOption func(*attemptOptions)
+
+// WithFirstAttemptAt lets retry callers enforce abort-after against the real
+// elapsed time since the first delivery attempt, including prior Retry-After
+// delays.
+func WithFirstAttemptAt(firstAttemptAt time.Time) AttemptOption {
+	return func(opts *attemptOptions) {
+		if !firstAttemptAt.IsZero() {
+			opts.firstAttemptAt = firstAttemptAt.UTC()
+		}
+	}
+}
+
+func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy BackoffPolicy, id, webhookID string, attemptNb int, cfg Config, idempotencyKey string, payload []byte, isTest bool, opts ...AttemptOption) (Attempt, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.Endpoint, bytes.NewBuffer(payload))
 	if err != nil {
 		return Attempt{}, errors.Wrap(err, "http.NewRequestWithContext")
 	}
 
+	options := attemptOptions{}
+	for _, opt := range opts {
+		opt(&options)
+	}
+
 	requestTime := time.Now().UTC()
+	if options.firstAttemptAt.IsZero() {
+		options.firstAttemptAt = requestTime
+	}
+
 	timestamp := requestTime.Unix()
 	signature, err := security.Sign(webhookID, timestamp, cfg.Secret, payload)
 	if err != nil {
@@ -115,7 +141,7 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy Backo
 	resp, doErr := httpClient.Do(req)
 	decisionTime := time.Now().UTC()
 
-	attempt, err := classifyResponse(ctx, resp, doErr, retryPolicy, attemptNb, decisionTime, Attempt{
+	attempt, err := classifyResponse(ctx, resp, doErr, retryPolicy, attemptNb, decisionTime, options.firstAttemptAt, Attempt{
 		ID:           id,
 		WebhookID:    webhookID,
 		Config:       cfg,
@@ -133,7 +159,7 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy Backo
 // classifyResponse turns the result of the delivery HTTP call into a persisted
 // Attempt with its final status. base carries the identity fields already set by
 // the caller; doErr is the transport error (if any).
-func classifyResponse(ctx context.Context, resp *http.Response, doErr error, retryPolicy BackoffPolicy, attemptNb int, now time.Time, base Attempt) (Attempt, error) {
+func classifyResponse(ctx context.Context, resp *http.Response, doErr error, retryPolicy BackoffPolicy, attemptNb int, now, firstAttemptAt time.Time, base Attempt) (Attempt, error) {
 	attempt := base
 
 	if doErr != nil {
@@ -145,8 +171,13 @@ func classifyResponse(ctx context.Context, resp *http.Response, doErr error, ret
 			attempt.Status = StatusAttemptFailed
 			return attempt, nil
 		}
+		nextRetryAfter := now.Add(delay)
+		if err := limitRetryWindow(retryPolicy, firstAttemptAt, nextRetryAfter); err != nil {
+			attempt.Status = StatusAttemptFailed
+			return attempt, nil
+		}
 		attempt.Status = StatusAttemptToRetry
-		attempt.NextRetryAfter = now.Add(delay)
+		attempt.NextRetryAfter = nextRetryAfter
 		return attempt, nil
 	}
 
@@ -198,7 +229,22 @@ func classifyResponse(ctx context.Context, resp *http.Response, doErr error, ret
 		delay = retryAfter
 	}
 
+	nextRetryAfter := now.Add(delay)
+	if err := limitRetryWindow(retryPolicy, firstAttemptAt, nextRetryAfter); err != nil {
+		attempt.Status = StatusAttemptFailed
+		return attempt, nil
+	}
 	attempt.Status = StatusAttemptToRetry
-	attempt.NextRetryAfter = now.Add(delay)
+	attempt.NextRetryAfter = nextRetryAfter
 	return attempt, nil
+}
+
+func limitRetryWindow(retryPolicy BackoffPolicy, firstAttemptAt, nextRetryAfter time.Time) error {
+	if firstAttemptAt.IsZero() {
+		return nil
+	}
+	if limiter, ok := retryPolicy.(RetryWindowLimiter); ok {
+		return limiter.LimitRetryWindow(nextRetryAfter.Sub(firstAttemptAt))
+	}
+	return nil
 }

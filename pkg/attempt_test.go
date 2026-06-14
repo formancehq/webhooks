@@ -258,6 +258,35 @@ func TestMakeAttempt_RetryAfterCannotExceedAbortAfterWindow(t *testing.T) {
 	assert.True(t, attempt.NextRetryAfter.IsZero(), "Retry-After beyond abort-after must not schedule a retry")
 }
 
+func TestMakeAttempt_RetryAfterCannotExtendPastFirstAttemptWindow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "7200")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	cfg := webhooks.Config{
+		ConfigUser: webhooks.ConfigUser{
+			Endpoint:   server.URL,
+			Secret:     webhooks.NewSecret(),
+			EventTypes: []string{"test.event"},
+		},
+		ID:     "cfg-retry-after-first-attempt-window",
+		Active: true,
+	}
+
+	attempt, err := webhooks.MakeAttempt(
+		context.Background(), server.Client(),
+		backoff.NewExponential(time.Second, time.Hour, 72*time.Hour, 15),
+		"attempt-id", "webhook-id", 12, cfg, "", []byte(`{"type":"test.event"}`), false,
+		webhooks.WithFirstAttemptAt(time.Now().UTC().Add(-71*time.Hour)),
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, webhooks.StatusAttemptFailed, attempt.Status)
+	assert.True(t, attempt.NextRetryAfter.IsZero(), "Retry-After must not extend the real retry window past abort-after")
+}
+
 func TestMakeAttempt_ClampsAbsurdRetryAfter(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "99999999") // ~3 years

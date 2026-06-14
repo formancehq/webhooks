@@ -45,7 +45,7 @@ The `Retrier` runs in a single goroutine with the following loop:
    - Unmarshal the payload from the most recent attempt
    - Execute the HTTP call (`MakeAttempt`) with a 30-second timeout
    - Insert a new attempt record with the result
-   - Update only the claimed (`retrying`) attempts to the final status
+   - Terminalize the claimed (`retrying`) attempts; if the new result is retryable, only the newly inserted attempt remains in `to retry`
    - The worker waits for all goroutines to complete before sleeping
 4. **Sleep** -- Wait `--retry-period` (default: 3 seconds), then repeat.
 
@@ -113,7 +113,7 @@ Oldest retries are prioritized per webhook with the `NOT EXISTS` check, then glo
 
 ### Status Scoping
 
-`UpdateAttemptsStatus` only modifies attempts in `retrying` status. Historical attempts (`success`, `failed`) are never overwritten. This ensures:
+`UpdateAttemptsStatus` only modifies attempts in `retrying` status. Historical attempts (`success`, `failed`) are never overwritten. When a retry still needs another retry, the claimed rows are marked `failed` and the newly inserted attempt carries the next `to retry` state. This ensures:
 - Accurate audit trail per attempt
 - No accidental overwrites from concurrent Kafka messages creating new attempts for the same webhook
 

@@ -17,3 +17,9 @@ type RetryAttemptLimiter interface {
 type RetryDelayLimiter interface {
 	LimitRetryDelay(attemptNumber int, delay time.Duration) (time.Duration, error)
 }
+
+// RetryWindowLimiter is implemented by retry policies that can reject a retry
+// schedule based on the real elapsed time since the first delivery attempt.
+type RetryWindowLimiter interface {
+	LimitRetryWindow(elapsed time.Duration) error
+}

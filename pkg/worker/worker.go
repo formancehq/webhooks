@@ -133,6 +133,12 @@ func (w *Retrier) processWebhookRetry(ctx context.Context, webhookID string) {
 		return
 	}
 
+	firstAttemptAt, err := w.store.FindFirstAttemptCreatedAtByWebhookID(ctx, webhookID)
+	if err != nil {
+		logging.FromContext(ctx).Errorf("finding first attempt for webhook %s: %s", webhookID, err)
+		return
+	}
+
 	var ev publish.EventMessage
 	if err := json.Unmarshal([]byte(atts[0].Payload), &ev); err != nil {
 		logging.FromContext(ctx).Errorf("unmarshalling payload for webhook %s: %s", webhookID, err)
@@ -153,7 +159,8 @@ func (w *Retrier) processWebhookRetry(ctx context.Context, webhookID string) {
 	}
 
 	attempt, err := webhooks.MakeAttempt(ctx, w.httpClient, w.retryPolicy, uuid.NewString(),
-		webhookID, newAttemptNb, atts[0].Config, ev.IdempotencyKey, []byte(atts[0].Payload), false)
+		webhookID, newAttemptNb, atts[0].Config, ev.IdempotencyKey, []byte(atts[0].Payload), false,
+		webhooks.WithFirstAttemptAt(firstAttemptAt))
 	if err != nil {
 		logging.FromContext(ctx).Errorf("making attempt for webhook %s: %s", webhookID, err)
 		return
@@ -164,7 +171,11 @@ func (w *Retrier) processWebhookRetry(ctx context.Context, webhookID string) {
 		return
 	}
 
-	if _, err := w.store.UpdateAttemptsStatus(ctx, webhookID, attempt.Status); err != nil {
+	claimedStatus := attempt.Status
+	if claimedStatus == webhooks.StatusAttemptToRetry {
+		claimedStatus = webhooks.StatusAttemptFailed
+	}
+	if _, err := w.store.UpdateAttemptsStatus(ctx, webhookID, claimedStatus); err != nil {
 		if errors.Is(err, storage.ErrAttemptsNotModified) {
 			return
 		}

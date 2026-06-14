@@ -22,6 +22,7 @@ type Store interface {
 	UpdateOneConfigActivation(ctx context.Context, id string, active bool) (webhooks.Config, error)
 	UpdateOneConfigSecret(ctx context.Context, id, secret string) (webhooks.Config, error)
 	FindAttemptsToRetryByWebhookID(ctx context.Context, webhookID string) ([]webhooks.Attempt, error)
+	FindFirstAttemptCreatedAtByWebhookID(ctx context.Context, webhookID string) (time.Time, error)
 	FindWebhookIDsToRetry(ctx context.Context, limit int) (webhookIDs []string, err error)
 	RecoverStaleRetryingAttempts(ctx context.Context, staleDuration time.Duration) error
 	UpdateAttemptsStatus(ctx context.Context, webhookID string, status string) ([]webhooks.Attempt, error)

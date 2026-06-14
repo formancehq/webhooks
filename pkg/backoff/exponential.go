@@ -56,6 +56,13 @@ func (e *exponential) LimitRetryDelay(attemptNumber int, delay time.Duration) (t
 	return delay, nil
 }
 
+func (e *exponential) LimitRetryWindow(elapsed time.Duration) error {
+	if elapsed > e.abortAfterDelay {
+		return ErrMaxAttemptsReached
+	}
+	return nil
+}
+
 func (e *exponential) retryDelayForAttempt(attemptNumber int) time.Duration {
 	delay := e.minRetryDelay
 	for i := 0; i < attemptNumber; i++ {

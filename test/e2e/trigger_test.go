@@ -229,21 +229,6 @@ func getNumEndpointAttemptsByStatus(db *bun.DB, endpoint, status string) (int, e
 	return count, err
 }
 
-func getNumPendingRetryAttempts(db *bun.DB) (int, error) {
-	var results []webhooks.Attempt
-	err := db.NewSelect().Model(&results).
-		Where("status IN (?)", bun.List([]string{
-			webhooks.StatusAttemptToRetry,
-			webhooks.StatusAttemptRetrying,
-		})).
-		Scan(logging.TestingContext())
-	if err != nil {
-		return 0, err
-	}
-
-	return len(results), nil
-}
-
 func getNumPendingRetryAttemptsForEndpoint(db *bun.DB, endpoint string) (int, error) {
 	count, err := db.NewSelect().Model((*webhooks.Attempt)(nil)).
 		Where("config->>'endpoint' = ?", endpoint).

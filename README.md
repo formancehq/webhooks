@@ -78,7 +78,7 @@ Key design consequence: **the current state of a delivery is smeared across mult
 
 1. **Stale recovery** (≤ once/min): attempts stuck in `retrying` > 5 min (crashed worker) are reset to `to retry`.
 2. **Atomic claim** ([pkg/storage/postgres/postgres.go](pkg/storage/postgres/postgres.go) `FindWebhookIDsToRetry`): a CTE selects up to `--retry-batch-size` (default 50) distinct `webhook_id`s whose oldest due attempt is ready, joins `configs` on `attempts.config->>'id'` to keep only active configs, locks rows with `FOR UPDATE SKIP LOCKED` (multi-worker safe), and flips them to `retrying`.
-3. **Parallel processing** via a bounded `pond` pool: for each webhook, re-read the `retrying` attempts, re-send with `MakeAttempt` at `retry_attempt + 1`, insert the new attempt, then update the claimed rows to the outcome status.
+3. **Parallel processing** via a bounded `pond` pool: for each webhook, re-read the `retrying` attempts, re-send with `MakeAttempt` at `retry_attempt + 1`, insert the new attempt, then terminalize the claimed rows. If the new attempt is retryable, only the newly inserted row stays in `to retry`.
 4. Sleep, repeat.
 
 Backoff is exponential without jitter ([pkg/backoff/exponential.go](pkg/backoff/exponential.go)): `min-backoff-delay` (1m) doubling up to `max-backoff-delay` (1h), aborting to `failed` once cumulative elapsed time exceeds `--abort-after` (default 72h) or `--max-attempts` is reached (default 15 attempts).
