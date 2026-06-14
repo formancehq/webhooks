@@ -196,6 +196,40 @@ func TestMakeAttempt_HonorsRetryAfter(t *testing.T) {
 		"Retry-After (120s) should override the shorter backoff")
 }
 
+func TestMakeAttempt_RetryAfterIsScheduledFromResponseTime(t *testing.T) {
+	const retryAfter = time.Second
+	const responseDelay = 300 * time.Millisecond
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(responseDelay)
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	cfg := webhooks.Config{
+		ConfigUser: webhooks.ConfigUser{
+			Endpoint:   server.URL,
+			Secret:     webhooks.NewSecret(),
+			EventTypes: []string{"test.event"},
+		},
+		ID:     "cfg-retry-after-response-time",
+		Active: true,
+	}
+
+	policy := &fixedBackoff{delay: 100 * time.Millisecond}
+	before := time.Now().UTC()
+	attempt, err := webhooks.MakeAttempt(
+		context.Background(), server.Client(), policy,
+		"attempt-id", "webhook-id", 0, cfg, "", []byte(`{"type":"test.event"}`), false,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, webhooks.StatusAttemptToRetry, attempt.Status)
+	assert.GreaterOrEqual(t, attempt.NextRetryAfter.Sub(before), retryAfter+responseDelay/2,
+		"Retry-After delay must be anchored after the endpoint response, not before the request")
+}
+
 func TestMakeAttempt_RetryAfterCannotExceedAbortAfterWindow(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "21600")

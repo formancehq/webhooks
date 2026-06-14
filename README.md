@@ -23,7 +23,7 @@ The binary has two run modes (a third `retries` mode mentioned in older docs no 
 
 Both are wired with `uber/fx` dependency injection, share a PostgreSQL database (via `bun`), and are configured through `cobra`/`pflag` flags (see [cmd/flag/flags.go](cmd/flag/flags.go)).
 
-```
+```text
 ┌─────────────────┐      ┌───────────────────────────┐      ┌──────────────────┐
 │  Kafka / NATS   │─────▶│          Worker           │─────▶│  User Endpoints  │
 │ (event source)  │      │ ┌───────────┐ ┌─────────┐ │      │ (webhook targets)│
@@ -114,25 +114,15 @@ Previously, `MakeAttempt` treated *any* non-2xx response as `to retry` ([pkg/att
 
 **Root cause 2 — no circuit breaker, no max-attempt cap; `abort-after`=30d is the *only* bound.**
 Partially mitigated in this PR by `--max-attempts` (default 15) and `--abort-after=72h`; the per-endpoint circuit breaker is still future work.
-With the previous `min-backoff=1m` doubling to a `max-backoff=1h` cap, the delay reached 1h after ~7 retries (~2h cumulative), then fired **once per hour for 30 days ≈ 718 more** → **~724 attempts per dead endpoint**. This exactly matches the observed Tenora "retry count up to 724". *This is why guardrails never bounded Tenora/Paynovate: there were none beyond the 30-day timer.*
+With the previous `min-backoff=1m` doubling to a `max-backoff=1h` cap, the delay reached 1h after ~7 retries (~2h cumulative), then fired **once per hour for 30 days ≈ 718 more** → **~724 attempts per dead endpoint**. Production incidents confirmed that guardrails did not bound dead endpoints beyond the 30-day timer.
 
 **Root cause 3 — orphaned attempts loop and are never reclaimed or purged.**
 Mitigated in this PR by retention cleanup for deleted and inactive configs.
 Deleting/deactivating a config used to leave `to retry` rows that the active-config join skipped but nothing ever transitioned to `failed` ([§2.1](#21-reliability--delivery-semantics)). Combined with zero retention ([§2.3](#23-scalability--data-growth)), the table only grew.
 
-**Production evidence:**
+**Sanitized production evidence:** retry storms were dominated by permanent endpoint failures, orphaned attempts stayed indefinitely in `to retry`, large `attempts` tables made the retry-claim query expensive, and manual cleanup materially reduced cross-AZ database replication traffic. Detailed incident evidence lives in internal runbooks.
 
-| Incident | Symptom | Source |
-|----------|---------|--------|
-| Hosting retry storm | **467k errors / 6h** (503 Paynovate test, 403 Paynovate creds, 405 example.com, 404 ngrok, 500 Xano) ≈ **1.9M DB requests/6h** | AWS-Cost-Investigation-Webhooks-Retry-Storm |
-| Orphaned attempts | **64M** attempt rows with no config, **3.6M** stuck in `to retry` looping forever | idem |
-| Cleanup payoff (2026-04-10) | cross-AZ Webhooks DB traffic **145 GB → 0.3 GB / 15 min**, est. **~$39k/yr** saved | idem |
-| Bad query plan | retry-claim query **~54s** vs **1.3ms** with the right index on a ~120-167 GB table; PR #150 fixed plan → **0.107 ms** | Codex AWS Cost Analysis 2026-05-20 |
-| Paynovate (live) | `api.baas.paynovate.com/hooks/formance`: **59,423 × 403 / 24h** = **39.17%** endpoint error rate | Webhooks Error Analysis 2026-06-09 |
-| Tenora staging | retry storm to a `loca.lt` tunnel (mostly 503), **~907k** `to retry`, retry count **up to 724**, **~39 GB** table | Tenora AWS Cost Spike 2026-06-09 |
-| Kulu | undetected broken endpoint: **13-14M errors**, retries **up to 21×**, **27.7M** transactions affected | Kulu Daily Sync 2026-03-26 |
-
-**Immediate priorities** (detailed in the plan): (a) treat permanent 4xx as terminal, (b) add a per-endpoint circuit breaker + max-attempt cap, (c) implement retention/compaction of `attempts`, (d) split observability by `service.name`/route/external dependency (the "slow Deriv POSTs" were actually Webhooks→Xano outbound calls, not Ledger latency — Deriv Error Analysis 2026-05-22).
+**Immediate priorities** (detailed in the plan): (a) treat permanent 4xx as terminal, (b) add a per-endpoint circuit breaker + max-attempt cap, (c) implement retention/compaction of `attempts`, (d) split observability by `service.name`/route/external dependency so outbound delivery latency is not misdiagnosed as internal service latency.
 
 ### 2.1 Reliability & delivery semantics
 
@@ -176,7 +166,7 @@ If the HTTP delivery succeeded but `InsertOneAttempt` fails, we `continue` and a
 ### 2.3 Scalability & data growth
 
 **P0 — Unbounded `attempts` table → cross-AZ cost. (prod)**
-No retention, no archival, no partitioning. Every delivery stores the full payload + full config snapshot; `success` rows are kept forever. Tables reached **120-167 GB** (Paynovate); the table churn drives **cross-AZ RDS replication traffic** that dominated the AWS bill — the 2026-04-10 orphan cleanup alone cut cross-AZ traffic from **145 GB → 0.3 GB per 15 min (~$39k/yr)**. Growth also degrades the retry-claim CTE (`NOT EXISTS` anti-join over hundreds of thousands of `to retry` rows — Tenora had ~907k) and inflates backups. Retention is **not optional**, it is the proven highest-ROI fix.
+No retention, no archival, no partitioning. Every delivery stores the full payload + full config snapshot; `success` rows are kept forever. Large attempts tables drive cross-AZ RDS replication traffic, inflate backups, and degrade the retry-claim CTE (`NOT EXISTS` anti-join over a large `to retry` backlog). Retention is **not optional**, it is the proven highest-ROI fix.
 
 **P2 — Retry throughput ceiling.**
 Polling claims ≤ 50 webhook IDs per 3s tick per worker (~16/s). The claim query joins on the JSONB expression `attempts.config->>'id'` (no expression index) and re-reads attempts twice per webhook (`FindAttemptsToRetryByWebhookID`, then `UpdateAttemptsStatus` does another SELECT before its UPDATE). During a large outage of a popular endpoint, the backlog drains slowly and the herd retries without jitter, synchronizing load spikes onto the recovering endpoint.
@@ -195,7 +185,7 @@ Polling claims ≤ 50 webhook IDs per 3s tick per worker (~16/s). The claim quer
 
 ### 2.5 Operability & code health
 
-- **No metrics, no per-dependency split. (prod)** Only traces + logs. No delivery success rate, retry-queue depth, end-to-end latency, or per-endpoint error rate → incidents are debugged with SQL (cf. the recent `skip locked` / `active configs` firefighting in #147, #150). Worse, outbound delivery latency is not attributed: the "slow Deriv POSTs" turned out to be Webhooks→Xano outbound calls, misdiagnosed as internal Ledger latency. Dashboards must split by `service.name`, route, and external dependency.
+- **No metrics, no per-dependency split. (prod)** Only traces + logs. No delivery success rate, retry-queue depth, end-to-end latency, or per-endpoint error rate → incidents are debugged with SQL (cf. the recent `skip locked` / `active configs` firefighting in #147, #150). Worse, outbound delivery latency is not attributed clearly enough and can be misdiagnosed as internal service latency. Dashboards must split by `service.name`, route, and external dependency.
 - **Health checks are no-ops**: server `/_healthcheck` returns an empty 200 with no DB check; the worker healthcheck logs `health check OK` at *Info* level on every probe (log spam).
 - **Mixed dependency generations**: `go-libs/v2` everywhere with `go-libs/v5` bolted on for audit only; `logrus` + go-libs logging coexist; `pkg/errors` is deprecated.
 - **Package layout**: the root `pkg` package (`webhooks`) is a grab-bag of domain model + HTTP delivery + backoff contract; the generated Speakeasy SDK (~100 files) is vendored in-tree with a `replace`, inflating the module and the diff noise.
@@ -212,7 +202,7 @@ Phased so that each step ships independently and de-risks the next one. Within a
 
 Goal: observe before changing anything.
 
-1. **OTel metrics** (S): counters/histograms for `webhooks_delivery_total{status,event_type}`, `webhooks_delivery_duration_seconds`, `webhooks_retry_queue_depth` (gauge from a cheap `count(*) where status='to retry'`), `webhooks_consumer_lag`. Wire to the existing OTLP pipeline; build the Grafana dashboard + alerts (queue depth, failure rate).
+1. **OTel metrics** (S): counters/histograms for `webhooks_delivery_attempts_total{status,status_class}`, `webhooks_delivery_duration_seconds`, `webhooks_retry_queue_depth` (gauge from a cheap `count(*) where status='to retry'`), `webhooks_consumer_lag`. Wire to the existing OTLP pipeline; build the Grafana dashboard + alerts (queue depth, failure rate).
 2. **Real health checks** (S): DB ping on `/_healthcheck`; drop the per-probe Info log in the worker handler.
 3. **Load test harness** (M): a reproducible benchmark (k6 or Go) simulating one slow endpoint among N, to quantify the head-of-line problem and validate Phase 2.
 
@@ -222,8 +212,8 @@ These directly kill the [§2.0](#20-the-core-problem-retry-storm--backlog-amplif
 
 1. **Terminal 4xx classification** (S): in `MakeAttempt`, mark `4xx` (except `408`/`429`) as `failed` immediately instead of `to retry`. Honor `Retry-After` for `429`. Kills the bulk of every observed storm (403/404/405 were the top error codes).
 2. **Circuit breaker + max-attempt cap** (M): per-config, after X consecutive failures stop claiming for a cooldown; hard-cap attempts (e.g. 15) independent of `--abort-after`. Lower the default `--abort-after` from 30d (720 retries) to something sane (e.g. 72h). Auto-disable endpoints failing > N days and flag them.
-3. **Retention / compaction of `attempts`** (M): scheduled purge of `success` (30d) and `failed` (90d) rows + reclaim orphaned `to retry` for deleted/inactive configs → `cancelled`. This is the change that produced the **~$39k/yr** cross-AZ saving; make it permanent and automatic instead of a manual one-off.
-4. **Per-dependency observability** (S): the Phase 0 metrics, split by `service.name` / route / outbound dependency so the next Tenora/Paynovate/Deriv case is caught from a dashboard, not 24h later by AWS billing.
+3. **Retention / compaction of `attempts`** (M): scheduled purge of `success` (30d) and `failed` (90d) rows + reclaim orphaned `to retry` for deleted/inactive configs → `failed`. This makes the proven manual cleanup path permanent and automatic.
+4. **Per-dependency observability** (S): the Phase 0 metrics, split by `service.name` / route / outbound dependency so the next endpoint incident is caught from a dashboard, not later by infrastructure billing.
 
 ### Phase 1b — Security & correctness quick wins (1–2 sprints, no schema change)
 
@@ -239,7 +229,7 @@ These directly kill the [§2.0](#20-the-core-problem-retry-storm--backlog-amplif
 
 The structural fix for head-of-line blocking, duplicates, and the convoluted claim query. Target model:
 
-```
+```text
 events ──▶ consumer: INSERT deliveries (outbox) ──▶ ACK immediately
                               │
               dispatcher pool (same claim pattern,
@@ -283,32 +273,32 @@ Phase 1 ships a retention job on the legacy `attempts` table; this phase makes i
 | Phase | Theme | Risk addressed | Effort |
 |-------|-------|----------------|--------|
 | 0 | Metrics & health | Flying blind | ~1 sprint |
-| **1** | **Stop retry storms (terminal 4xx, circuit breaker, retention, per-dep metrics)** | **Retry storms, ~$39k/yr cross-AZ cost, undetected dead endpoints** | **~1 sprint** |
+| **1** | **Stop retry storms (terminal 4xx, circuit breaker, retention, per-dep metrics)** | **Retry storms, cross-AZ cost, undetected dead endpoints** | **~1 sprint** |
 | 1b | Security/correctness quick wins | SSRF, secret leaks, dup retries, shutdown | 1–2 sprints |
 | 2 | Outbox + deliveries model | Head-of-line blocking, duplicates, claim complexity | 2–3 sprints |
 | 3 | Retention hardening | Unbounded growth (new model) | ~1 sprint |
 | 4 | Deliveries API, replay, rotation | Supportability, product parity | 1–2 sprints |
 | 5 | Code modernization | Maintenance drag | continuous |
 
-> **If you do only one thing this quarter:** Phase 1. Terminal-4xx + circuit breaker + automatic retention would have prevented every incident in the [§2.0](#20-the-core-problem-retry-storm--backlog-amplification-prod) table and the recurring AWS cost spikes.
+> **If you do only one thing this quarter:** Phase 1. Terminal-4xx + circuit breaker + automatic retention would have prevented the incident class described in [§2.0](#20-the-core-problem-retry-storm--backlog-amplification-prod) and the recurring DB I/O and cost spikes.
 
 ---
 
 ## 4. Development
 
 Run the linters:
-```
+```sh
 earthly +lint
 ```
 
 Run the tests:
-```
+```sh
 earthly -P +tests
 ```
 
 ### Usage
 
-```
+```text
 Usage:
   webhooks [command]
 

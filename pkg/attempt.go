@@ -94,8 +94,8 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy Backo
 		return Attempt{}, errors.Wrap(err, "http.NewRequestWithContext")
 	}
 
-	ts := time.Now().UTC()
-	timestamp := ts.Unix()
+	requestTime := time.Now().UTC()
+	timestamp := requestTime.Unix()
 	signature, err := security.Sign(webhookID, timestamp, cfg.Secret, payload)
 	if err != nil {
 		return Attempt{}, errors.Wrap(err, "security.Sign")
@@ -113,8 +113,9 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy Backo
 
 	start := time.Now()
 	resp, doErr := httpClient.Do(req)
+	decisionTime := time.Now().UTC()
 
-	attempt, err := classifyResponse(ctx, resp, doErr, retryPolicy, attemptNb, ts, Attempt{
+	attempt, err := classifyResponse(ctx, resp, doErr, retryPolicy, attemptNb, decisionTime, Attempt{
 		ID:           id,
 		WebhookID:    webhookID,
 		Config:       cfg,
@@ -132,7 +133,7 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy Backo
 // classifyResponse turns the result of the delivery HTTP call into a persisted
 // Attempt with its final status. base carries the identity fields already set by
 // the caller; doErr is the transport error (if any).
-func classifyResponse(ctx context.Context, resp *http.Response, doErr error, retryPolicy BackoffPolicy, attemptNb int, ts time.Time, base Attempt) (Attempt, error) {
+func classifyResponse(ctx context.Context, resp *http.Response, doErr error, retryPolicy BackoffPolicy, attemptNb int, now time.Time, base Attempt) (Attempt, error) {
 	attempt := base
 
 	if doErr != nil {
@@ -145,7 +146,7 @@ func classifyResponse(ctx context.Context, resp *http.Response, doErr error, ret
 			return attempt, nil
 		}
 		attempt.Status = StatusAttemptToRetry
-		attempt.NextRetryAfter = ts.Add(delay)
+		attempt.NextRetryAfter = now.Add(delay)
 		return attempt, nil
 	}
 
@@ -185,7 +186,7 @@ func classifyResponse(ctx context.Context, resp *http.Response, doErr error, ret
 	// Respect an explicit Retry-After (429/503) when it asks us to wait longer
 	// than our computed backoff, but never let endpoint-controlled delays bypass
 	// the retry policy window.
-	if retryAfter, ok := parseRetryAfter(resp.Header.Get("Retry-After"), ts); ok && retryAfter > delay {
+	if retryAfter, ok := parseRetryAfter(resp.Header.Get("Retry-After"), now); ok && retryAfter > delay {
 		if limiter, ok := retryPolicy.(RetryDelayLimiter); ok {
 			var limitErr error
 			retryAfter, limitErr = limiter.LimitRetryDelay(attemptNb, retryAfter)
@@ -198,6 +199,6 @@ func classifyResponse(ctx context.Context, resp *http.Response, doErr error, ret
 	}
 
 	attempt.Status = StatusAttemptToRetry
-	attempt.NextRetryAfter = ts.Add(delay)
+	attempt.NextRetryAfter = now.Add(delay)
 	return attempt, nil
 }

@@ -28,9 +28,11 @@ type RetentionConfig struct {
 	BatchSize int
 }
 
-// Enabled reports whether any retention action is configured.
+// Enabled reports whether any retention action is configured. The runner must
+// also stay enabled when terminal purging is disabled, because it reclaims
+// retrying/to-retry attempts whose config was deleted or deactivated.
 func (c RetentionConfig) Enabled() bool {
-	return c.SuccessDelay > 0 || c.FailedDelay > 0
+	return c.Period > 0 || c.SuccessDelay > 0 || c.FailedDelay > 0
 }
 
 // Retention periodically purges old terminal attempts and reclaims attempts

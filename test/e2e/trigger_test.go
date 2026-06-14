@@ -89,7 +89,7 @@ var _ = Context("Retries", func() {
 				WithTimeout(12 * time.Second).
 				Should(BeNumerically(">=", 3))
 
-			Eventually(getNumPendingRetryAttempts).WithArguments(db).
+			Eventually(getNumPendingRetryAttemptsForEndpoint).WithArguments(db, httpServer.URL).
 				WithTimeout(10 * time.Second).
 				Should(Equal(0))
 		})
@@ -186,12 +186,12 @@ var _ = Context("Retries", func() {
 				Publish("foo", []byte(`{"type":"foo"}`))
 			Expect(err).To(BeNil())
 
-			Eventually(getNumFailedAttempts).WithArguments(db).
+			Eventually(getNumEndpointAttemptsByStatus).WithArguments(db, httpServer.URL, webhooks.StatusAttemptFailed).
 				WithTimeout(5 * time.Second).
 				Should(BeNumerically(">=", 1))
 
 			// A permanent 4xx must never enter the retry queue
-			Consistently(getNumPendingRetryAttempts).WithArguments(db).
+			Consistently(getNumPendingRetryAttemptsForEndpoint).WithArguments(db, httpServer.URL).
 				WithTimeout(3 * time.Second).
 				Should(Equal(0))
 		})
