@@ -50,6 +50,7 @@ func serve(cmd *cobra.Command, _ []string) error {
 	}
 
 	listen, _ := cmd.Flags().GetString(flag.Listen)
+	auditEnabled, _ := cmd.Flags().GetBool(flag.AuditEnabled)
 	options := []fx.Option{
 		fx.Provide(func() server.ServiceInfo {
 			return server.ServiceInfo{
@@ -63,7 +64,7 @@ func serve(cmd *cobra.Command, _ []string) error {
 		// gauges) before the database connection is closed.
 		otlpmetrics.FXModuleFromFlags(cmd),
 		innerotlp.HttpClientModule(),
-		server.FXModuleFromFlags(cmd, listen, service.IsDebug(cmd)),
+		server.FXModuleFromFlags(cmd, listen, service.IsDebug(cmd), auditEnabled),
 		licence.FXModuleFromFlags(cmd, ServiceName),
 	}
 	isWorker, _ := cmd.Flags().GetBool(flag.Worker)
