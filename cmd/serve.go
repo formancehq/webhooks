@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/formancehq/go-libs/v2/aws/iam"
 	"github.com/formancehq/go-libs/v2/otlp"
+	"github.com/formancehq/go-libs/v2/otlp/otlpmetrics"
 	"github.com/formancehq/go-libs/v2/otlp/otlptraces"
 	"github.com/formancehq/go-libs/v2/publish"
 
@@ -30,6 +31,7 @@ func newServeCommand() *cobra.Command {
 	}
 	otlp.AddFlags(ret.Flags())
 	otlptraces.AddFlags(ret.Flags())
+	otlpmetrics.AddFlags(ret.Flags())
 	publish.AddFlags(ServiceName, ret.Flags())
 	auth.AddFlags(ret.Flags())
 	flag.Init(ret.Flags())
@@ -57,6 +59,9 @@ func serve(cmd *cobra.Command, _ []string) error {
 		auth.FXModuleFromFlags(cmd),
 		publish.FXModuleFromFlags(cmd, service.IsDebug(cmd)),
 		postgres.NewModule(*connectionOptions, service.IsDebug(cmd)),
+		// Registered after postgres so metrics stop (and flush DB-backed
+		// gauges) before the database connection is closed.
+		otlpmetrics.FXModuleFromFlags(cmd),
 		innerotlp.HttpClientModule(),
 		server.FXModuleFromFlags(cmd, listen, service.IsDebug(cmd)),
 		licence.FXModuleFromFlags(cmd, ServiceName),
@@ -68,6 +73,7 @@ func serve(cmd *cobra.Command, _ []string) error {
 		minBackOffDelay, _ := cmd.Flags().GetDuration(flag.MinBackoffDelay)
 		maxBackOffDelay, _ := cmd.Flags().GetDuration(flag.MaxBackoffDelay)
 		abortAfter, _ := cmd.Flags().GetDuration(flag.AbortAfter)
+		maxAttempts, _ := cmd.Flags().GetInt(flag.MaxAttempts)
 		topics, _ := cmd.Flags().GetStringSlice(flag.KafkaTopics)
 
 		options = append(options, worker.StartModule(
@@ -77,10 +83,12 @@ func serve(cmd *cobra.Command, _ []string) error {
 				minBackOffDelay,
 				maxBackOffDelay,
 				abortAfter,
+				maxAttempts,
 			),
 			retryBatchSize,
 			service.IsDebug(cmd),
 			topics,
+			retentionConfigFromFlags(cmd),
 		))
 	}
 

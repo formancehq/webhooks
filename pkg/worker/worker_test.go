@@ -48,10 +48,33 @@ func (m *mockStore) FindAttemptsToRetryByWebhookID(_ context.Context, webhookID 
 	return m.attempts[webhookID], nil
 }
 
+func (m *mockStore) FindFirstAttemptCreatedAtByWebhookID(_ context.Context, webhookID string) (time.Time, error) {
+	atts := m.attempts[webhookID]
+	if len(atts) == 0 {
+		return time.Time{}, nil
+	}
+
+	first := atts[0].CreatedAt
+	for _, att := range atts[1:] {
+		if first.IsZero() || (!att.CreatedAt.IsZero() && att.CreatedAt.Before(first)) {
+			first = att.CreatedAt
+		}
+	}
+	return first, nil
+}
+
 func (m *mockStore) InsertOneAttempt(_ context.Context, att webhooks.Attempt) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.inserted = append(m.inserted, att)
+	return nil
+}
+
+func (m *mockStore) InsertOneAttemptAndUpdateAttemptsStatus(_ context.Context, att webhooks.Attempt, webhookID string, status string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.inserted = append(m.inserted, att)
+	m.updated[webhookID] = status
 	return nil
 }
 
@@ -83,7 +106,14 @@ func (m *mockStore) UpdateOneConfigSecret(_ context.Context, _, _ string) (webho
 func (m *mockStore) UpdateOneConfig(_ context.Context, _ string, _ webhooks.ConfigUser) error {
 	return nil
 }
-func (m *mockStore) Close(_ context.Context) error { return nil }
+func (m *mockStore) PurgeFinishedAttempts(_ context.Context, _, _ time.Duration, _ int) (int64, error) {
+	return 0, nil
+}
+func (m *mockStore) FailUnclaimableAttempts(_ context.Context, _ int, _ time.Duration) (int64, error) {
+	return 0, nil
+}
+func (m *mockStore) CountAttemptsToRetry(_ context.Context) (int64, error) { return 0, nil }
+func (m *mockStore) Close(_ context.Context) error                         { return nil }
 
 func TestProcessWebhookRetrySuccess(t *testing.T) {
 	// HTTP server that returns 200
@@ -119,7 +149,7 @@ func TestProcessWebhookRetrySuccess(t *testing.T) {
 		},
 	})
 
-	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour), 10)
+	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour, 0), 10)
 	require.NoError(t, err)
 
 	retrier.processWebhookRetry(context.Background(), webhookID)
@@ -166,7 +196,7 @@ func TestProcessWebhookRetryFailure(t *testing.T) {
 		},
 	})
 
-	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour), 10)
+	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour, 0), 10)
 	require.NoError(t, err)
 
 	retrier.processWebhookRetry(context.Background(), webhookID)
@@ -174,6 +204,101 @@ func TestProcessWebhookRetryFailure(t *testing.T) {
 	// A new attempt should have been inserted with "to retry" status
 	require.Len(t, store.inserted, 1)
 	require.Equal(t, webhooks.StatusAttemptToRetry, store.inserted[0].Status)
+	require.Equal(t, webhooks.StatusAttemptFailed, store.updated[webhookID],
+		"claimed attempts must be terminalized so only the newly inserted row remains queued")
+}
+
+func TestProcessWebhookRetryDoesNotCallEndpointAfterMaxAttempts(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	webhookID := "webhook-1"
+	payload, _ := json.Marshal(map[string]string{"type": "test.event"})
+
+	cfg := webhooks.Config{
+		ConfigUser: webhooks.ConfigUser{
+			Endpoint:   server.URL,
+			Secret:     webhooks.NewSecret(),
+			EventTypes: []string{"test.event"},
+		},
+		ID:     "config-1",
+		Active: true,
+	}
+
+	store := newMockStore(nil, map[string][]webhooks.Attempt{
+		webhookID: {
+			{
+				ID:           "att-1",
+				WebhookID:    webhookID,
+				Config:       cfg,
+				Payload:      string(payload),
+				StatusCode:   500,
+				RetryAttempt: 0,
+				Status:       webhooks.StatusAttemptRetrying,
+			},
+		},
+	})
+
+	retrier, err := NewRetrier(store, server.Client(), time.Second,
+		backoff.NewExponential(time.Second, time.Minute, time.Hour, 1), 10)
+	require.NoError(t, err)
+
+	retrier.processWebhookRetry(context.Background(), webhookID)
+
+	require.Zero(t, hits.Load(), "retry cap must be checked before the outbound HTTP call")
+	require.Empty(t, store.inserted, "no synthetic attempt should be inserted when no HTTP attempt was made")
+	require.Equal(t, webhooks.StatusAttemptFailed, store.updated[webhookID])
+}
+
+func TestProcessWebhookRetryDoesNotCallEndpointAfterAbortWindow(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	webhookID := "webhook-1"
+	payload, _ := json.Marshal(map[string]string{"type": "test.event"})
+
+	cfg := webhooks.Config{
+		ConfigUser: webhooks.ConfigUser{
+			Endpoint:   server.URL,
+			Secret:     webhooks.NewSecret(),
+			EventTypes: []string{"test.event"},
+		},
+		ID:     "config-1",
+		Active: true,
+	}
+
+	store := newMockStore(nil, map[string][]webhooks.Attempt{
+		webhookID: {
+			{
+				ID:           "att-1",
+				WebhookID:    webhookID,
+				Config:       cfg,
+				Payload:      string(payload),
+				StatusCode:   500,
+				RetryAttempt: 1,
+				Status:       webhooks.StatusAttemptRetrying,
+				CreatedAt:    time.Now().UTC().Add(-2 * time.Hour),
+			},
+		},
+	})
+
+	retrier, err := NewRetrier(store, server.Client(), time.Second,
+		backoff.NewExponential(time.Second, time.Minute, time.Hour, 0), 10)
+	require.NoError(t, err)
+
+	retrier.processWebhookRetry(context.Background(), webhookID)
+
+	require.Zero(t, hits.Load(), "retry window must be checked before the outbound HTTP call")
+	require.Empty(t, store.inserted, "no synthetic attempt should be inserted when no HTTP attempt was made")
+	require.Equal(t, webhooks.StatusAttemptFailed, store.updated[webhookID])
 }
 
 func TestPoolProcessesBatchInParallel(t *testing.T) {
@@ -228,7 +353,7 @@ func TestPoolProcessesBatchInParallel(t *testing.T) {
 
 	store := newMockStore(webhookIDs, attempts)
 
-	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour), 10)
+	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour, 0), 10)
 	require.NoError(t, err)
 
 	// Manually claim and process (simulating one tick)
@@ -260,7 +385,7 @@ func TestProcessWebhookRetryNoAttempts(t *testing.T) {
 
 	store := newMockStore(nil, map[string][]webhooks.Attempt{})
 
-	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour), 10)
+	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour, 0), 10)
 	require.NoError(t, err)
 
 	// Should not panic or make HTTP calls
@@ -300,7 +425,7 @@ func TestProcessWebhookRetryBadPayload(t *testing.T) {
 		},
 	})
 
-	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour), 10)
+	retrier, err := NewRetrier(store, server.Client(), time.Second, backoff.NewExponential(time.Second, time.Minute, time.Hour, 0), 10)
 	require.NoError(t, err)
 
 	// Should not panic, should log error and return

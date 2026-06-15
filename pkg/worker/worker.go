@@ -79,7 +79,10 @@ func (w *Retrier) Stop(ctx context.Context) {
 
 var errNoAttemptsFound = errors.New("attemptRetries: no attempts found")
 
-const staleRecoveryInterval = time.Minute
+const (
+	staleRecoveryInterval   = time.Minute
+	staleRetryingAttemptAge = 5 * time.Minute
+)
 
 func (w *Retrier) attemptRetries(ctx context.Context) {
 	lastRecovery := time.Time{}
@@ -91,7 +94,7 @@ func (w *Retrier) attemptRetries(ctx context.Context) {
 		default:
 			// Recover attempts stuck in "retrying" state from crashed workers (at most once per minute)
 			if time.Since(lastRecovery) >= staleRecoveryInterval {
-				if err := w.store.RecoverStaleRetryingAttempts(ctx, 5*time.Minute); err != nil {
+				if err := w.store.RecoverStaleRetryingAttempts(ctx, staleRetryingAttemptAge); err != nil {
 					logging.FromContext(ctx).Errorf("recovering stale retrying attempts: %s", err)
 				}
 				lastRecovery = time.Now()
@@ -133,6 +136,21 @@ func (w *Retrier) processWebhookRetry(ctx context.Context, webhookID string) {
 		return
 	}
 
+	firstAttemptAt, err := w.store.FindFirstAttemptCreatedAtByWebhookID(ctx, webhookID)
+	if err != nil {
+		logging.FromContext(ctx).Errorf("finding first attempt for webhook %s: %s", webhookID, err)
+		return
+	}
+
+	if err := limitRetryWindowBeforeAttempt(w.retryPolicy, firstAttemptAt); err != nil {
+		logging.FromContext(ctx).Debugf("retry window elapsed for webhook %s: %s", webhookID, err)
+		if _, updateErr := w.store.UpdateAttemptsStatus(ctx, webhookID, webhooks.StatusAttemptFailed); updateErr != nil {
+			logging.FromContext(ctx).Errorf("marking retry window elapsed attempts failed for webhook %s: %s",
+				webhookID, updateErr)
+		}
+		return
+	}
+
 	var ev publish.EventMessage
 	if err := json.Unmarshal([]byte(atts[0].Payload), &ev); err != nil {
 		logging.FromContext(ctx).Errorf("unmarshalling payload for webhook %s: %s", webhookID, err)
@@ -140,22 +158,44 @@ func (w *Retrier) processWebhookRetry(ctx context.Context, webhookID string) {
 	}
 
 	newAttemptNb := atts[0].RetryAttempt + 1
+	if limiter, ok := w.retryPolicy.(webhooks.RetryAttemptLimiter); ok {
+		if err := limiter.CanRetryAttempt(newAttemptNb); err != nil {
+			logging.FromContext(ctx).Debugf("retry cap reached for webhook %s at attempt %d: %s",
+				webhookID, newAttemptNb, err)
+			if _, updateErr := w.store.UpdateAttemptsStatus(ctx, webhookID, webhooks.StatusAttemptFailed); updateErr != nil {
+				logging.FromContext(ctx).Errorf("marking retry capped attempts failed for webhook %s: %s",
+					webhookID, updateErr)
+			}
+			return
+		}
+	}
+
 	attempt, err := webhooks.MakeAttempt(ctx, w.httpClient, w.retryPolicy, uuid.NewString(),
-		webhookID, newAttemptNb, atts[0].Config, ev.IdempotencyKey, []byte(atts[0].Payload), false)
+		webhookID, newAttemptNb, atts[0].Config, ev.IdempotencyKey, []byte(atts[0].Payload), false,
+		webhooks.WithFirstAttemptAt(firstAttemptAt))
 	if err != nil {
 		logging.FromContext(ctx).Errorf("making attempt for webhook %s: %s", webhookID, err)
 		return
 	}
 
-	if err := w.store.InsertOneAttempt(ctx, attempt); err != nil {
-		logging.FromContext(ctx).Errorf("inserting attempt for webhook %s: %s", webhookID, err)
-		return
+	claimedStatus := attempt.Status
+	if claimedStatus == webhooks.StatusAttemptToRetry {
+		claimedStatus = webhooks.StatusAttemptFailed
 	}
-
-	if _, err := w.store.UpdateAttemptsStatus(ctx, webhookID, attempt.Status); err != nil {
+	if err := w.store.InsertOneAttemptAndUpdateAttemptsStatus(ctx, attempt, webhookID, claimedStatus); err != nil {
 		if errors.Is(err, storage.ErrAttemptsNotModified) {
 			return
 		}
-		logging.FromContext(ctx).Errorf("updating attempts status for webhook %s: %s", webhookID, err)
+		logging.FromContext(ctx).Errorf("inserting attempt and updating attempts status for webhook %s: %s", webhookID, err)
 	}
+}
+
+func limitRetryWindowBeforeAttempt(retryPolicy webhooks.BackoffPolicy, firstAttemptAt time.Time) error {
+	if firstAttemptAt.IsZero() {
+		return nil
+	}
+	if limiter, ok := retryPolicy.(webhooks.RetryWindowLimiter); ok {
+		return limiter.LimitRetryWindow(time.Since(firstAttemptAt))
+	}
+	return nil
 }

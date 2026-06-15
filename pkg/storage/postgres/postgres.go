@@ -153,6 +153,23 @@ func (s Store) FindAttemptsToRetryByWebhookID(ctx context.Context, webhookID str
 	return res, nil
 }
 
+func (s Store) FindFirstAttemptCreatedAtByWebhookID(ctx context.Context, webhookID string) (time.Time, error) {
+	var att webhooks.Attempt
+	if err := s.db.NewSelect().Model(&att).
+		Column("created_at").
+		Where("webhook_id = ?", webhookID).
+		Order("created_at ASC").
+		Limit(1).
+		Scan(ctx); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return time.Time{}, storage.ErrWebhookIDNotFound
+		}
+		return time.Time{}, errors.Wrap(err, "finding first attempt created_at")
+	}
+
+	return att.CreatedAt, nil
+}
+
 func (s Store) FindWebhookIDsToRetry(ctx context.Context, limit int) ([]string, error) {
 	// Raw SQL is required here: the atomic claim pattern (SELECT + UPDATE in a single
 	// statement via CTE) cannot be expressed with Bun's query builder.
@@ -219,8 +236,12 @@ func (s Store) RecoverStaleRetryingAttempts(ctx context.Context, staleDuration t
 }
 
 func (s Store) UpdateAttemptsStatus(ctx context.Context, webhookID, status string) ([]webhooks.Attempt, error) {
+	return updateAttemptsStatus(ctx, s.db, webhookID, status)
+}
+
+func updateAttemptsStatus(ctx context.Context, db bun.IDB, webhookID, status string) ([]webhooks.Attempt, error) {
 	atts := []webhooks.Attempt{}
-	if err := s.db.NewSelect().Model(&atts).
+	if err := db.NewSelect().Model(&atts).
 		Where("webhook_id = ?", webhookID).
 		Where("status = ?", webhooks.StatusAttemptRetrying).
 		Scan(ctx); err != nil {
@@ -234,7 +255,7 @@ func (s Store) UpdateAttemptsStatus(ctx context.Context, webhookID, status strin
 		return []webhooks.Attempt{}, storage.ErrAttemptsNotModified
 	}
 
-	if _, err := s.db.NewUpdate().Model((*webhooks.Attempt)(nil)).
+	if _, err := db.NewUpdate().Model((*webhooks.Attempt)(nil)).
 		Where("webhook_id = ?", webhookID).
 		Where("status = ?", webhooks.StatusAttemptRetrying).
 		Set("status = ?", status).
@@ -256,6 +277,141 @@ func (s Store) InsertOneAttempt(ctx context.Context, att webhooks.Attempt) error
 	}
 
 	return nil
+}
+
+func (s Store) InsertOneAttemptAndUpdateAttemptsStatus(ctx context.Context, att webhooks.Attempt, webhookID string, status string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return errors.Wrap(err, "beginning attempt transaction")
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.NewInsert().Model(&att).Exec(ctx); err != nil {
+		return errors.Wrap(err, "inserting one attempt")
+	}
+	if _, err := updateAttemptsStatus(ctx, tx, webhookID, status); err != nil {
+		return errors.Wrap(err, "updating attempts status")
+	}
+	if err := tx.Commit(); err != nil {
+		return errors.Wrap(err, "committing attempt transaction")
+	}
+
+	return nil
+}
+
+func (s Store) PurgeFinishedAttempts(ctx context.Context, successOlderThan, failedOlderThan time.Duration, batchSize int) (int64, error) {
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+
+	type purgeTarget struct {
+		status    string
+		retention time.Duration
+	}
+	targets := []purgeTarget{
+		{webhooks.StatusAttemptSuccess, successOlderThan},
+		{webhooks.StatusAttemptFailed, failedOlderThan},
+	}
+
+	var total int64
+	for _, t := range targets {
+		if t.retention <= 0 {
+			continue
+		}
+		cutoff := time.Now().UTC().Add(-t.retention)
+
+		// Delete at most one bounded batch per status and run so first deploys
+		// against a large backlog do not monopolize the attempts table.
+		res, err := s.db.NewRaw(`
+			DELETE FROM attempts
+			WHERE id IN (
+				SELECT candidate.id FROM attempts candidate
+				WHERE candidate.status = ? AND candidate.updated_at < ?
+				  AND (
+					? != ?
+					OR NOT EXISTS (
+						SELECT 1
+						FROM attempts pending
+						WHERE pending.webhook_id = candidate.webhook_id
+						  AND pending.status IN (?, ?)
+					)
+				  )
+				LIMIT ?
+				FOR UPDATE SKIP LOCKED
+			)
+		`, t.status, cutoff, t.status, webhooks.StatusAttemptFailed,
+			webhooks.StatusAttemptToRetry, webhooks.StatusAttemptRetrying, batchSize).Exec(ctx)
+		if err != nil {
+			return total, errors.Wrapf(err, "purging %q attempts", t.status)
+		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return total, errors.Wrap(err, "reading purge rows affected")
+		}
+		total += affected
+	}
+
+	return total, nil
+}
+
+func (s Store) FailUnclaimableAttempts(ctx context.Context, batchSize int, retryingStaleDuration time.Duration) (int64, error) {
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+	if retryingStaleDuration <= 0 {
+		retryingStaleDuration = 5 * time.Minute
+	}
+	staleCutoff := time.Now().UTC().Add(-retryingStaleDuration)
+
+	// Update at most one bounded batch per run. Retry rows that are actively
+	// claimed stay untouched unless they are stale, matching retry recovery.
+	res, err := s.db.NewRaw(`
+		UPDATE attempts
+		SET status = ?, updated_at = NOW()
+		WHERE id IN (
+			SELECT id FROM attempts
+			WHERE (
+				status = ?
+				OR (status = ? AND updated_at < ?)
+			)
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM configs c
+				WHERE c.id = attempts.config->>'id'
+				  AND c.active = true
+			  )
+			LIMIT ?
+			FOR UPDATE SKIP LOCKED
+		)
+	`, webhooks.StatusAttemptFailed, webhooks.StatusAttemptToRetry,
+		webhooks.StatusAttemptRetrying, staleCutoff, batchSize).Exec(ctx)
+	if err != nil {
+		return 0, errors.Wrap(err, "failing unclaimable attempts")
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, errors.Wrap(err, "reading unclaimable rows affected")
+	}
+
+	return affected, nil
+}
+
+const retryQueueDepthCountLimit = 1_000_000
+
+func (s Store) CountAttemptsToRetry(ctx context.Context) (int64, error) {
+	var count int64
+	if err := s.db.NewRaw(`
+		SELECT count(*)
+		FROM (
+			SELECT 1
+			FROM attempts
+			WHERE status = ?
+			LIMIT ?
+		) bounded_attempts
+	`, webhooks.StatusAttemptToRetry, retryQueueDepthCountLimit).Scan(ctx, &count); err != nil {
+		return 0, errors.Wrap(err, "counting attempts to retry")
+	}
+	return count, nil
 }
 
 func (s Store) Close(ctx context.Context) error {

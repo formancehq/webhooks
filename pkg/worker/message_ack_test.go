@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill/message"
-	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/formancehq/go-libs/v2/publish"
+	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

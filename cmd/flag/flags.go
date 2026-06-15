@@ -12,11 +12,16 @@ const (
 	Listen   = "listen"
 	Worker   = "worker"
 
-	RetryPeriod    = "retry-period"
-	RetryBatchSize = "retry-batch-size"
-	AbortAfter     = "abort-after"
+	RetryPeriod     = "retry-period"
+	RetryBatchSize  = "retry-batch-size"
+	AbortAfter      = "abort-after"
+	MaxAttempts     = "max-attempts"
 	MinBackoffDelay = "min-backoff-delay"
 	MaxBackoffDelay = "max-backoff-delay"
+
+	RetentionPeriod       = "retention-period"
+	RetentionSuccessDelay = "retention-success-delay"
+	RetentionFailedDelay  = "retention-failed-delay"
 
 	KafkaTopics = "kafka-topics"
 	AutoMigrate = "auto-migrate"
@@ -33,6 +38,12 @@ const (
 var (
 	DefaultRetryPeriod    = 3 * time.Second
 	DefaultRetryBatchSize = 50
+	DefaultAbortAfter     = 10 * time.Hour
+	DefaultMaxAttempts    = 15
+
+	DefaultRetentionPeriod       = time.Hour
+	DefaultRetentionSuccessDelay = 30 * 24 * time.Hour
+	DefaultRetentionFailedDelay  = 90 * 24 * time.Hour
 )
 
 func Init(flagSet *pflag.FlagSet) {
@@ -45,8 +56,14 @@ func Init(flagSet *pflag.FlagSet) {
 
 	flagSet.StringSlice(KafkaTopics, []string{DefaultKafkaTopic}, "Kafka topics")
 
-	flagSet.Duration(AbortAfter, 30*24*time.Hour, "consider a webhook as failed after retrying it for this duration.")
+	flagSet.Duration(AbortAfter, DefaultAbortAfter, "consider a webhook as failed after retrying it for this duration.")
+	flagSet.Int(MaxAttempts, DefaultMaxAttempts, "hard cap on delivery attempts per webhook (0 disables the cap, leaving abort-after as the only bound)")
 	flagSet.Duration(MinBackoffDelay, time.Minute, "minimum backoff delay")
 	flagSet.Duration(MaxBackoffDelay, time.Hour, "maximum backoff delay")
+
+	flagSet.Duration(RetentionPeriod, DefaultRetentionPeriod, "interval between attempts-table cleanup runs")
+	flagSet.Duration(RetentionSuccessDelay, DefaultRetentionSuccessDelay, "retain 'success' attempts for this long before purging (0 disables)")
+	flagSet.Duration(RetentionFailedDelay, DefaultRetentionFailedDelay, "retain 'failed' attempts for this long before purging (0 disables)")
+
 	flagSet.Bool(AutoMigrate, false, "auto migrate database")
 }

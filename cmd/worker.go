@@ -14,6 +14,7 @@ import (
 	"github.com/formancehq/go-libs/v2/bun/bunconnect"
 	"github.com/formancehq/go-libs/v2/licence"
 
+	"github.com/formancehq/go-libs/v2/otlp/otlpmetrics"
 	"github.com/formancehq/go-libs/v2/otlp/otlptraces"
 
 	"github.com/formancehq/go-libs/v2/httpserver"
@@ -35,6 +36,7 @@ func newWorkerCommand() *cobra.Command {
 	}
 	otlp.AddFlags(ret.Flags())
 	otlptraces.AddFlags(ret.Flags())
+	otlpmetrics.AddFlags(ret.Flags())
 	publish.AddFlags(ServiceName, ret.Flags())
 	auth.AddFlags(ret.Flags())
 	flag.Init(ret.Flags())
@@ -57,8 +59,10 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 	minBackOffDelay, _ := cmd.Flags().GetDuration(flag.MinBackoffDelay)
 	maxBackOffDelay, _ := cmd.Flags().GetDuration(flag.MaxBackoffDelay)
 	abortAfter, _ := cmd.Flags().GetDuration(flag.AbortAfter)
+	maxAttempts, _ := cmd.Flags().GetInt(flag.MaxAttempts)
 	topics, _ := cmd.Flags().GetStringSlice(flag.KafkaTopics)
 	listen, _ := cmd.Flags().GetString(flag.Listen)
+	retention := retentionConfigFromFlags(cmd)
 
 	return service.New(
 		cmd.OutOrStdout(),
@@ -71,6 +75,7 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 		}),
 		otlp.FXModuleFromFlags(cmd),
 		otlptraces.FXModuleFromFlags(cmd),
+		otlpmetrics.FXModuleFromFlags(cmd),
 		worker.StartModule(
 			cmd,
 			retryPeriod,
@@ -78,10 +83,23 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 				minBackOffDelay,
 				maxBackOffDelay,
 				abortAfter,
+				maxAttempts,
 			),
 			retryBatchSize,
 			service.IsDebug(cmd),
 			topics,
+			retention,
 		),
 	).Run(cmd)
+}
+
+func retentionConfigFromFlags(cmd *cobra.Command) worker.RetentionConfig {
+	period, _ := cmd.Flags().GetDuration(flag.RetentionPeriod)
+	successDelay, _ := cmd.Flags().GetDuration(flag.RetentionSuccessDelay)
+	failedDelay, _ := cmd.Flags().GetDuration(flag.RetentionFailedDelay)
+	return worker.RetentionConfig{
+		Period:       period,
+		SuccessDelay: successDelay,
+		FailedDelay:  failedDelay,
+	}
 }

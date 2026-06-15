@@ -7,7 +7,6 @@ replace github.com/formancehq/webhooks/pkg/client => ./pkg/client
 require (
 	github.com/ThreeDotsLabs/watermill v1.5.1
 	github.com/alitto/pond v1.9.2
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/formancehq/go-libs/v2 v2.2.5
 	github.com/formancehq/go-libs/v5 v5.1.1-0.20260522083443-d2a60ed2e0dd
 	github.com/formancehq/webhooks/pkg/client v0.0.0-00010101000000-000000000000
@@ -24,6 +23,7 @@ require (
 	github.com/uptrace/bun/dialect/pgdialect v1.2.18
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.66.0
 	go.opentelemetry.io/otel v1.43.0
+	go.opentelemetry.io/otel/metric v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 	go.uber.org/fx v1.24.0
 )
@@ -68,6 +68,7 @@ require (
 	github.com/containerd/continuity v0.4.5 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/dnwe/otelsarama v0.0.0-20240308230250-9388d9d40bc0 // indirect
@@ -200,7 +201,6 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.41.0 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.41.0 // indirect
 	go.opentelemetry.io/otel/log v0.17.0 // indirect
-	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
