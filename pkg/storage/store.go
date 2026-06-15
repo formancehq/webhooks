@@ -27,21 +27,21 @@ type Store interface {
 	RecoverStaleRetryingAttempts(ctx context.Context, staleDuration time.Duration) error
 	UpdateAttemptsStatus(ctx context.Context, webhookID string, status string) ([]webhooks.Attempt, error)
 	InsertOneAttempt(ctx context.Context, att webhooks.Attempt) error
+	InsertOneAttemptAndUpdateAttemptsStatus(ctx context.Context, att webhooks.Attempt, webhookID string, status string) error
 	Close(ctx context.Context) error
 	UpdateOneConfig(ctx context.Context, id string, cfg webhooks.ConfigUser) error
 
 	// PurgeFinishedAttempts deletes terminal attempts older than the given
-	// retentions (success vs failed), in batches of at most batchSize rows, and
-	// returns the total number of rows deleted. A retention <= 0 disables purging
-	// for that status.
+	// retentions (success vs failed), up to batchSize rows per status and run.
+	// A retention <= 0 disables purging for that status.
 	PurgeFinishedAttempts(ctx context.Context, successOlderThan, failedOlderThan time.Duration, batchSize int) (int64, error)
-	// FailUnclaimableAttempts marks pending attempts ('to retry'/'retrying')
-	// whose config no longer exists or is inactive as 'failed', so they stop
-	// polluting the retry queue forever. Rows are updated in batches of at most
-	// batchSize. Returns the number of rows updated.
-	FailUnclaimableAttempts(ctx context.Context, batchSize int) (int64, error)
-	// CountAttemptsToRetry returns the number of attempts currently queued for
-	// retry ('to retry'). Used as the retry-queue-depth gauge — the leading
+	// FailUnclaimableAttempts marks pending attempts whose config no longer exists
+	// or is inactive as 'failed'. 'to retry' rows are failed immediately; 'retrying'
+	// rows are failed only after retryingStaleDuration so in-flight workers are not
+	// raced by retention. At most batchSize rows are updated per run.
+	FailUnclaimableAttempts(ctx context.Context, batchSize int, retryingStaleDuration time.Duration) (int64, error)
+	// CountAttemptsToRetry returns the capped number of attempts currently queued
+	// for retry ('to retry'). Used as the retry-queue-depth gauge — the leading
 	// indicator of a retry storm.
 	CountAttemptsToRetry(ctx context.Context) (int64, error)
 }

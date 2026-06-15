@@ -78,10 +78,10 @@ Key design consequence: **the current state of a delivery is smeared across mult
 
 1. **Stale recovery** (≤ once/min): attempts stuck in `retrying` > 5 min (crashed worker) are reset to `to retry`.
 2. **Atomic claim** ([pkg/storage/postgres/postgres.go](pkg/storage/postgres/postgres.go) `FindWebhookIDsToRetry`): a CTE selects up to `--retry-batch-size` (default 50) distinct `webhook_id`s whose oldest due attempt is ready, joins `configs` on `attempts.config->>'id'` to keep only active configs, locks rows with `FOR UPDATE SKIP LOCKED` (multi-worker safe), and flips them to `retrying`.
-3. **Parallel processing** via a bounded `pond` pool: for each webhook, re-read the `retrying` attempts, re-send with `MakeAttempt` at `retry_attempt + 1`, insert the new attempt, then terminalize the claimed rows. If the new attempt is retryable, only the newly inserted row stays in `to retry`.
+3. **Parallel processing** via a bounded `pond` pool: for each webhook, re-read the `retrying` attempts, verify retry caps before calling the endpoint, re-send with `MakeAttempt` at `retry_attempt + 1`, then atomically insert the new attempt and terminalize the claimed rows. If the new attempt is retryable, only the newly inserted row stays in `to retry`.
 4. Sleep, repeat.
 
-Backoff is exponential without jitter ([pkg/backoff/exponential.go](pkg/backoff/exponential.go)): `min-backoff-delay` (1m) doubling up to `max-backoff-delay` (1h), aborting to `failed` once cumulative elapsed time exceeds `--abort-after` (default 72h) or `--max-attempts` is reached (default 15 attempts).
+Backoff is exponential without jitter ([pkg/backoff/exponential.go](pkg/backoff/exponential.go)): `min-backoff-delay` (1m) doubling up to `max-backoff-delay` (1h), aborting to `failed` once cumulative elapsed time exceeds `--abort-after` (default 10h) or `--max-attempts` is reached (default 15 attempts). With nominal backoff, 15 attempts are exhausted after about 9h03; `abort-after` is the elapsed-time backstop for `Retry-After`, downtime, and backlog delays.
 
 ### 1.5 Security model
 
@@ -113,7 +113,7 @@ Mitigated in this PR by terminal 4xx classification.
 Previously, `MakeAttempt` treated *any* non-2xx response as `to retry` ([pkg/attempt.go:106-118](pkg/attempt.go:106)). A `403` (bad credentials), `404` (gone), or `405` (wrong method) is **permanent** but was retried for the full `--abort-after` window anyway. There was no client-error short-circuit, no `Retry-After` honoring for `429`.
 
 **Root cause 2 — no circuit breaker, no max-attempt cap; `abort-after`=30d is the *only* bound.**
-Partially mitigated in this PR by `--max-attempts` (default 15) and `--abort-after=72h`; the per-endpoint circuit breaker is still future work.
+Partially mitigated in this PR by `--max-attempts` (default 15) and `--abort-after=10h`; the per-endpoint circuit breaker is still future work.
 With the previous `min-backoff=1m` doubling to a `max-backoff=1h` cap, the delay reached 1h after ~7 retries (~2h cumulative), then fired **once per hour for 30 days ≈ 718 more** → **~724 attempts per dead endpoint**. Production incidents confirmed that guardrails did not bound dead endpoints beyond the 30-day timer.
 
 **Root cause 3 — orphaned attempts loop and are never reclaimed or purged.**
@@ -202,7 +202,7 @@ Phased so that each step ships independently and de-risks the next one. Within a
 
 Goal: observe before changing anything.
 
-1. **OTel metrics** (S): counters/histograms for `webhooks_delivery_attempts_total{status,status_class}`, `webhooks_delivery_duration_seconds`, `webhooks_retry_queue_depth` (gauge from a cheap `count(*) where status='to retry'`), `webhooks_consumer_lag`. Wire to the existing OTLP pipeline; build the Grafana dashboard + alerts (queue depth, failure rate).
+1. **OTel metrics** (S): counters/histograms for `webhooks_delivery_attempts_total{status,status_class}`, `webhooks_delivery_duration_seconds`, `webhooks_retry_queue_depth` (capped gauge for `status='to retry'`), `webhooks_consumer_lag`. Wire to the existing OTLP pipeline; build the Grafana dashboard + alerts (queue depth, failure rate).
 2. **Real health checks** (S): DB ping on `/_healthcheck`; drop the per-probe Info log in the worker handler.
 3. **Load test harness** (M): a reproducible benchmark (k6 or Go) simulating one slow endpoint among N, to quantify the head-of-line problem and validate Phase 2.
 
@@ -211,7 +211,7 @@ Goal: observe before changing anything.
 These directly kill the [§2.0](#20-the-core-problem-retry-storm--backlog-amplification-prod) failure mode and the AWS cost bleed. Ship these first.
 
 1. **Terminal 4xx classification** (S): in `MakeAttempt`, mark `4xx` (except `408`/`429`) as `failed` immediately instead of `to retry`. Honor `Retry-After` for `429`. Kills the bulk of every observed storm (403/404/405 were the top error codes).
-2. **Circuit breaker + max-attempt cap** (M): per-config, after X consecutive failures stop claiming for a cooldown; hard-cap attempts (e.g. 15) independent of `--abort-after`. Lower the default `--abort-after` from 30d (720 retries) to something sane (e.g. 72h). Auto-disable endpoints failing > N days and flag them.
+2. **Circuit breaker + max-attempt cap** (M): per-config, after X consecutive failures stop claiming for a cooldown; hard-cap attempts (e.g. 15) independent of `--abort-after`. Lower the default `--abort-after` from 30d (720 retries) to something coherent with the attempt cap (default 10h). Auto-disable endpoints failing > N days and flag them.
 3. **Retention / compaction of `attempts`** (M): scheduled purge of `success` (30d) and `failed` (90d) rows + reclaim orphaned `to retry` for deleted/inactive configs → `failed`. This makes the proven manual cleanup path permanent and automatic.
 4. **Per-dependency observability** (S): the Phase 0 metrics, split by `service.name` / route / outbound dependency so the next endpoint incident is caught from a dashboard, not later by infrastructure billing.
 
@@ -221,7 +221,7 @@ These directly kill the [§2.0](#20-the-core-problem-retry-storm--backlog-amplif
 2. **Bound response reads** (S): `io.LimitReader(resp.Body, 64<<10)` in `MakeAttempt`; persist a truncated body excerpt on failure (useful for the future deliveries API).
 3. **Stop leaking secrets** (M): redact `secret` from list/get responses (keep it on create/rotate only — breaking change to coordinate with SDK/fctl); stop snapshotting the secret inside `attempts.config` (strip it before insert; the retry path re-reads it from `configs`).
 4. **Add jitter to backoff** (S): full jitter (`rand(0, delay)`) to de-synchronize retry herds onto recovering endpoints.
-5. **Transactional retry processing** (M): wrap `InsertOneAttempt` + `UpdateAttemptsStatus` in one transaction; make `UpdateAttemptsStatus` a single `UPDATE … RETURNING` (drop the pre-SELECT).
+5. **Retry update optimization** (M): make `UpdateAttemptsStatus` a single `UPDATE … RETURNING` (drop the pre-SELECT).
 6. **Fix graceful shutdown** (M): replace `time.Sleep` with `select { case <-ctx.Done(); case <-ticker.C }`, run the loop off the fx lifecycle context, remove the `default:` escape in `Stop`, drain the pond pool with a deadline.
 7. **API correctness** (S): `UpdateOneConfig` checks existence (404) and bumps `updated_at`; reject secret regeneration on PUT unless explicitly requested.
 
@@ -315,7 +315,7 @@ Key flags:
       --retry-batch-size int                 Webhook IDs claimed per tick (default 50)
       --min-backoff-delay duration           Minimum backoff delay (default 1m)
       --max-backoff-delay duration           Maximum backoff delay (default 1h)
-      --abort-after duration                 Mark failed after retrying this long (default 72h)
+      --abort-after duration                 Mark failed after retrying this long (default 10h)
       --max-attempts int                     Hard cap on delivery attempts per webhook (default 15)
       --retention-period duration            Attempts-table cleanup interval (default 1h)
       --retention-success-delay duration     Retain success attempts before purging (default 720h)

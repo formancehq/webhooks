@@ -93,7 +93,7 @@ func registerQueueDepthMetric(store storage.Store) error {
 	meter := otel.GetMeterProvider().Meter("webhooks")
 	_, err := meter.Int64ObservableGauge(
 		"webhooks_retry_queue_depth",
-		metric.WithDescription("Number of attempts currently queued for retry ('to retry')"),
+		metric.WithDescription("Number of attempts currently queued for retry ('to retry'), capped at 1000000"),
 		metric.WithInt64Callback(func(ctx context.Context, o metric.Int64Observer) error {
 			n, err := store.CountAttemptsToRetry(ctx)
 			if err != nil {

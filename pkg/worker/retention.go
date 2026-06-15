@@ -24,7 +24,7 @@ type RetentionConfig struct {
 	SuccessDelay time.Duration
 	// FailedDelay retains 'failed' attempts for this long (<=0 disables).
 	FailedDelay time.Duration
-	// BatchSize bounds the number of rows deleted per statement.
+	// BatchSize bounds the number of rows touched per cleanup statement and run.
 	BatchSize int
 }
 
@@ -79,7 +79,7 @@ func (r *Retention) Run(ctx context.Context) {
 }
 
 func (r *Retention) runOnce(ctx context.Context) {
-	if n, err := r.store.FailUnclaimableAttempts(ctx, r.cfg.BatchSize); err != nil {
+	if n, err := r.store.FailUnclaimableAttempts(ctx, r.cfg.BatchSize, staleRetryingAttemptAge); err != nil {
 		logging.FromContext(ctx).Errorf("retention: failing unclaimable attempts: %s", err)
 	} else if n > 0 {
 		logging.FromContext(ctx).Infof("retention: marked %d unclaimable attempts as failed", n)

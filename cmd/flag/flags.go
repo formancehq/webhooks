@@ -38,7 +38,7 @@ const (
 var (
 	DefaultRetryPeriod    = 3 * time.Second
 	DefaultRetryBatchSize = 50
-	DefaultAbortAfter     = 72 * time.Hour
+	DefaultAbortAfter     = 10 * time.Hour
 	DefaultMaxAttempts    = 15
 
 	DefaultRetentionPeriod       = time.Hour

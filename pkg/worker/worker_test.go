@@ -70,6 +70,14 @@ func (m *mockStore) InsertOneAttempt(_ context.Context, att webhooks.Attempt) er
 	return nil
 }
 
+func (m *mockStore) InsertOneAttemptAndUpdateAttemptsStatus(_ context.Context, att webhooks.Attempt, webhookID string, status string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.inserted = append(m.inserted, att)
+	m.updated[webhookID] = status
+	return nil
+}
+
 func (m *mockStore) UpdateAttemptsStatus(_ context.Context, webhookID string, status string) ([]webhooks.Attempt, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -101,7 +109,7 @@ func (m *mockStore) UpdateOneConfig(_ context.Context, _ string, _ webhooks.Conf
 func (m *mockStore) PurgeFinishedAttempts(_ context.Context, _, _ time.Duration, _ int) (int64, error) {
 	return 0, nil
 }
-func (m *mockStore) FailUnclaimableAttempts(_ context.Context, _ int) (int64, error) {
+func (m *mockStore) FailUnclaimableAttempts(_ context.Context, _ int, _ time.Duration) (int64, error) {
 	return 0, nil
 }
 func (m *mockStore) CountAttemptsToRetry(_ context.Context) (int64, error) { return 0, nil }
@@ -242,6 +250,53 @@ func TestProcessWebhookRetryDoesNotCallEndpointAfterMaxAttempts(t *testing.T) {
 	retrier.processWebhookRetry(context.Background(), webhookID)
 
 	require.Zero(t, hits.Load(), "retry cap must be checked before the outbound HTTP call")
+	require.Empty(t, store.inserted, "no synthetic attempt should be inserted when no HTTP attempt was made")
+	require.Equal(t, webhooks.StatusAttemptFailed, store.updated[webhookID])
+}
+
+func TestProcessWebhookRetryDoesNotCallEndpointAfterAbortWindow(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	webhookID := "webhook-1"
+	payload, _ := json.Marshal(map[string]string{"type": "test.event"})
+
+	cfg := webhooks.Config{
+		ConfigUser: webhooks.ConfigUser{
+			Endpoint:   server.URL,
+			Secret:     webhooks.NewSecret(),
+			EventTypes: []string{"test.event"},
+		},
+		ID:     "config-1",
+		Active: true,
+	}
+
+	store := newMockStore(nil, map[string][]webhooks.Attempt{
+		webhookID: {
+			{
+				ID:           "att-1",
+				WebhookID:    webhookID,
+				Config:       cfg,
+				Payload:      string(payload),
+				StatusCode:   500,
+				RetryAttempt: 1,
+				Status:       webhooks.StatusAttemptRetrying,
+				CreatedAt:    time.Now().UTC().Add(-2 * time.Hour),
+			},
+		},
+	})
+
+	retrier, err := NewRetrier(store, server.Client(), time.Second,
+		backoff.NewExponential(time.Second, time.Minute, time.Hour, 0), 10)
+	require.NoError(t, err)
+
+	retrier.processWebhookRetry(context.Background(), webhookID)
+
+	require.Zero(t, hits.Load(), "retry window must be checked before the outbound HTTP call")
 	require.Empty(t, store.inserted, "no synthetic attempt should be inserted when no HTTP attempt was made")
 	require.Equal(t, webhooks.StatusAttemptFailed, store.updated[webhookID])
 }

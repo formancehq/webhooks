@@ -148,10 +148,18 @@ func TestPurgeFinishedAttemptsBatches(t *testing.T) {
 		insertAttemptAged(t, store, cfg, webhooks.StatusAttemptSuccess, old)
 	}
 
-	// batchSize smaller than the backlog: the loop must drain everything
+	// batchSize smaller than the backlog: each run consumes only one batch.
 	deleted, err := store.PurgeFinishedAttempts(ctx, 24*time.Hour, 24*time.Hour, 2)
 	require.NoError(t, err)
-	require.EqualValues(t, 5, deleted)
+	require.EqualValues(t, 2, deleted)
+
+	deleted, err = store.PurgeFinishedAttempts(ctx, 24*time.Hour, 24*time.Hour, 2)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, deleted)
+
+	deleted, err = store.PurgeFinishedAttempts(ctx, 24*time.Hour, 24*time.Hour, 2)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, deleted)
 }
 
 func TestRetentionIndexesExist(t *testing.T) {
@@ -181,6 +189,18 @@ func TestRetentionIndexesExist(t *testing.T) {
 			require.Contains(t, indexDef, tc.status)
 		})
 	}
+
+	t.Run("idx_attempts_first_attempt_lookup", func(t *testing.T) {
+		var indexDef string
+		err := db.NewRaw(`
+			SELECT indexdef
+			FROM pg_indexes
+			WHERE tablename = 'attempts' AND indexname = ?
+		`, "idx_attempts_first_attempt_lookup").Scan(ctx, &indexDef)
+		require.NoError(t, err)
+		require.Contains(t, indexDef, "webhook_id")
+		require.Contains(t, indexDef, "created_at")
+	})
 }
 
 func TestFailUnclaimableAttempts(t *testing.T) {
@@ -188,6 +208,7 @@ func TestFailUnclaimableAttempts(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().UTC()
+	stale := now.Add(-10 * time.Minute)
 
 	// Live config: its pending attempts must be preserved.
 	liveCfg := insertConfig(t, store)
@@ -199,7 +220,8 @@ func TestFailUnclaimableAttempts(t *testing.T) {
 	_, err := store.UpdateOneConfigActivation(ctx, inactiveCfg.ID, false)
 	require.NoError(t, err)
 	inactiveToRetry := insertAttemptAged(t, store, inactiveCfg, webhooks.StatusAttemptToRetry, now)
-	inactiveRetrying := insertAttemptAged(t, store, inactiveCfg, webhooks.StatusAttemptRetrying, now)
+	inactiveRetrying := insertAttemptAged(t, store, inactiveCfg, webhooks.StatusAttemptRetrying, stale)
+	inactiveRetryingRecent := insertAttemptAged(t, store, inactiveCfg, webhooks.StatusAttemptRetrying, now)
 	inactiveSuccess := insertAttemptAged(t, store, inactiveCfg, webhooks.StatusAttemptSuccess, now)
 
 	// Orphan config: never persisted, simulating a deleted config snapshotted
@@ -210,20 +232,23 @@ func TestFailUnclaimableAttempts(t *testing.T) {
 		EventTypes: []string{"test.event"},
 	})
 	orphanToRetry := insertAttemptAged(t, store, orphanCfg, webhooks.StatusAttemptToRetry, now)
-	orphanRetrying := insertAttemptAged(t, store, orphanCfg, webhooks.StatusAttemptRetrying, now)
+	orphanRetrying := insertAttemptAged(t, store, orphanCfg, webhooks.StatusAttemptRetrying, stale)
+	orphanRetryingRecent := insertAttemptAged(t, store, orphanCfg, webhooks.StatusAttemptRetrying, now)
 	orphanSuccess := insertAttemptAged(t, store, orphanCfg, webhooks.StatusAttemptSuccess, now)
 
-	updated, err := store.FailUnclaimableAttempts(ctx, 1) // batchSize 1 to exercise the loop
+	updated, err := store.FailUnclaimableAttempts(ctx, 100, 5*time.Minute)
 	require.NoError(t, err)
-	require.EqualValues(t, 4, updated, "only pending inactive/deleted config attempts should be failed")
+	require.EqualValues(t, 4, updated, "only pending to-retry and stale retrying inactive/deleted config attempts should be failed")
 
 	statuses := attemptStatusesByID(t, db)
 	require.Equal(t, webhooks.StatusAttemptToRetry, statuses[liveToRetry], "live config attempts must be preserved")
 	require.Equal(t, webhooks.StatusAttemptFailed, statuses[inactiveToRetry])
 	require.Equal(t, webhooks.StatusAttemptFailed, statuses[inactiveRetrying])
+	require.Equal(t, webhooks.StatusAttemptRetrying, statuses[inactiveRetryingRecent], "recent retrying rows may still be in-flight")
 	require.Equal(t, webhooks.StatusAttemptSuccess, statuses[inactiveSuccess], "terminal inactive-config attempts must not be rewritten")
 	require.Equal(t, webhooks.StatusAttemptFailed, statuses[orphanToRetry])
 	require.Equal(t, webhooks.StatusAttemptFailed, statuses[orphanRetrying])
+	require.Equal(t, webhooks.StatusAttemptRetrying, statuses[orphanRetryingRecent], "recent retrying rows may still be in-flight")
 	require.Equal(t, webhooks.StatusAttemptSuccess, statuses[orphanSuccess], "terminal orphan attempts must not be rewritten")
 
 	require.Equal(t, 1, countAttemptsByStatus(t, store, webhooks.StatusAttemptToRetry))

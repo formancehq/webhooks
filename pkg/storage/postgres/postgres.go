@@ -236,8 +236,12 @@ func (s Store) RecoverStaleRetryingAttempts(ctx context.Context, staleDuration t
 }
 
 func (s Store) UpdateAttemptsStatus(ctx context.Context, webhookID, status string) ([]webhooks.Attempt, error) {
+	return updateAttemptsStatus(ctx, s.db, webhookID, status)
+}
+
+func updateAttemptsStatus(ctx context.Context, db bun.IDB, webhookID, status string) ([]webhooks.Attempt, error) {
 	atts := []webhooks.Attempt{}
-	if err := s.db.NewSelect().Model(&atts).
+	if err := db.NewSelect().Model(&atts).
 		Where("webhook_id = ?", webhookID).
 		Where("status = ?", webhooks.StatusAttemptRetrying).
 		Scan(ctx); err != nil {
@@ -251,7 +255,7 @@ func (s Store) UpdateAttemptsStatus(ctx context.Context, webhookID, status strin
 		return []webhooks.Attempt{}, storage.ErrAttemptsNotModified
 	}
 
-	if _, err := s.db.NewUpdate().Model((*webhooks.Attempt)(nil)).
+	if _, err := db.NewUpdate().Model((*webhooks.Attempt)(nil)).
 		Where("webhook_id = ?", webhookID).
 		Where("status = ?", webhooks.StatusAttemptRetrying).
 		Set("status = ?", status).
@@ -270,6 +274,26 @@ func (s Store) UpdateAttemptsStatus(ctx context.Context, webhookID, status strin
 func (s Store) InsertOneAttempt(ctx context.Context, att webhooks.Attempt) error {
 	if _, err := s.db.NewInsert().Model(&att).Exec(ctx); err != nil {
 		return errors.Wrap(err, "inserting one attempt")
+	}
+
+	return nil
+}
+
+func (s Store) InsertOneAttemptAndUpdateAttemptsStatus(ctx context.Context, att webhooks.Attempt, webhookID string, status string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return errors.Wrap(err, "beginning attempt transaction")
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.NewInsert().Model(&att).Exec(ctx); err != nil {
+		return errors.Wrap(err, "inserting one attempt")
+	}
+	if _, err := updateAttemptsStatus(ctx, tx, webhookID, status); err != nil {
+		return errors.Wrap(err, "updating attempts status")
+	}
+	if err := tx.Commit(); err != nil {
+		return errors.Wrap(err, "committing attempt transaction")
 	}
 
 	return nil
@@ -296,88 +320,88 @@ func (s Store) PurgeFinishedAttempts(ctx context.Context, successOlderThan, fail
 		}
 		cutoff := time.Now().UTC().Add(-t.retention)
 
-		// Delete in bounded batches so a large backlog does not lock the table or
-		// generate one huge transaction. SKIP LOCKED keeps concurrent retention
-		// runners (multiple worker replicas) from contending on the same rows.
-		// Loop until a batch deletes fewer rows than requested (backlog drained).
-		for {
-			res, err := s.db.NewRaw(`
-				DELETE FROM attempts
-				WHERE id IN (
-					SELECT id FROM attempts
-					WHERE status = ? AND updated_at < ?
-					LIMIT ?
-					FOR UPDATE SKIP LOCKED
-				)
-			`, t.status, cutoff, batchSize).Exec(ctx)
-			if err != nil {
-				return total, errors.Wrapf(err, "purging %q attempts", t.status)
-			}
-			affected, err := res.RowsAffected()
-			if err != nil {
-				return total, errors.Wrap(err, "reading purge rows affected")
-			}
-			total += affected
-			if affected < int64(batchSize) {
-				break
-			}
+		// Delete at most one bounded batch per status and run so first deploys
+		// against a large backlog do not monopolize the attempts table.
+		res, err := s.db.NewRaw(`
+			DELETE FROM attempts
+			WHERE id IN (
+				SELECT id FROM attempts
+				WHERE status = ? AND updated_at < ?
+				LIMIT ?
+				FOR UPDATE SKIP LOCKED
+			)
+		`, t.status, cutoff, batchSize).Exec(ctx)
+		if err != nil {
+			return total, errors.Wrapf(err, "purging %q attempts", t.status)
 		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return total, errors.Wrap(err, "reading purge rows affected")
+		}
+		total += affected
 	}
 
 	return total, nil
 }
 
-func (s Store) FailUnclaimableAttempts(ctx context.Context, batchSize int) (int64, error) {
+func (s Store) FailUnclaimableAttempts(ctx context.Context, batchSize int, retryingStaleDuration time.Duration) (int64, error) {
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
-
-	// Update in bounded batches: the production backlog of unclaimable attempts
-	// reached millions of rows, and a single UPDATE over all of them would hold
-	// locks and generate one giant transaction. SKIP LOCKED keeps concurrent
-	// retention runners from contending on the same rows.
-	var total int64
-	for {
-		res, err := s.db.NewRaw(`
-			UPDATE attempts
-			SET status = ?, updated_at = NOW()
-			WHERE id IN (
-				SELECT id FROM attempts
-				WHERE status IN (?, ?)
-				  AND NOT EXISTS (
-					SELECT 1
-					FROM configs c
-					WHERE c.id = attempts.config->>'id'
-					  AND c.active = true
-				  )
-				LIMIT ?
-				FOR UPDATE SKIP LOCKED
-			)
-		`, webhooks.StatusAttemptFailed, webhooks.StatusAttemptToRetry,
-			webhooks.StatusAttemptRetrying, batchSize).Exec(ctx)
-		if err != nil {
-			return total, errors.Wrap(err, "failing unclaimable attempts")
-		}
-		affected, err := res.RowsAffected()
-		if err != nil {
-			return total, errors.Wrap(err, "reading unclaimable rows affected")
-		}
-		total += affected
-		if affected < int64(batchSize) {
-			return total, nil
-		}
+	if retryingStaleDuration <= 0 {
+		retryingStaleDuration = 5 * time.Minute
 	}
+	staleCutoff := time.Now().UTC().Add(-retryingStaleDuration)
+
+	// Update at most one bounded batch per run. Retry rows that are actively
+	// claimed stay untouched unless they are stale, matching retry recovery.
+	res, err := s.db.NewRaw(`
+		UPDATE attempts
+		SET status = ?, updated_at = NOW()
+		WHERE id IN (
+			SELECT id FROM attempts
+			WHERE (
+				status = ?
+				OR (status = ? AND updated_at < ?)
+			)
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM configs c
+				WHERE c.id = attempts.config->>'id'
+				  AND c.active = true
+			  )
+			LIMIT ?
+			FOR UPDATE SKIP LOCKED
+		)
+	`, webhooks.StatusAttemptFailed, webhooks.StatusAttemptToRetry,
+		webhooks.StatusAttemptRetrying, staleCutoff, batchSize).Exec(ctx)
+	if err != nil {
+		return 0, errors.Wrap(err, "failing unclaimable attempts")
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, errors.Wrap(err, "reading unclaimable rows affected")
+	}
+
+	return affected, nil
 }
 
+const retryQueueDepthCountLimit = 1_000_000
+
 func (s Store) CountAttemptsToRetry(ctx context.Context) (int64, error) {
-	count, err := s.db.NewSelect().
-		Model((*webhooks.Attempt)(nil)).
-		Where("status = ?", webhooks.StatusAttemptToRetry).
-		Count(ctx)
-	if err != nil {
+	var count int64
+	if err := s.db.NewRaw(`
+		SELECT count(*)
+		FROM (
+			SELECT 1
+			FROM attempts
+			WHERE status = ?
+			LIMIT ?
+		) bounded_attempts
+	`, webhooks.StatusAttemptToRetry, retryQueueDepthCountLimit).Scan(ctx, &count); err != nil {
 		return 0, errors.Wrap(err, "counting attempts to retry")
 	}
-	return int64(count), nil
+	return count, nil
 }
 
 func (s Store) Close(ctx context.Context) error {

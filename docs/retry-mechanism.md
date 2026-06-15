@@ -149,7 +149,8 @@ This ensures no attempt is permanently stuck. The 5-minute window is chosen to b
 | `--retry-batch-size` | `50` | Number of distinct webhook IDs claimed per tick |
 | `--min-backoff-delay` | `1m` | Minimum delay before retrying a failed attempt |
 | `--max-backoff-delay` | `1h` | Maximum delay between retries (exponential backoff) |
-| `--abort-after` | `30d` | Stop retrying after this duration and mark as `failed` |
+| `--abort-after` | `10h` | Stop retrying after this duration and mark as `failed` |
+| `--max-attempts` | `15` | Stop retrying after this many delivery attempts; with nominal backoff this is about 9h03 |
 
 ## Database Indexes
 
@@ -175,6 +176,10 @@ WHERE status = 'retrying';
 CREATE INDEX idx_attempts_retrying_recovery
 ON attempts (updated_at)
 WHERE status = 'retrying';
+
+-- Speeds up fetching the first attempt timestamp for retry-window checks
+CREATE INDEX CONCURRENTLY idx_attempts_first_attempt_lookup
+ON attempts (webhook_id, created_at);
 ```
 
 ## HTTP Client
@@ -183,7 +188,7 @@ The HTTP client used for webhook delivery has a **30-second timeout** (`pkg/otlp
 
 ## Backoff Strategy
 
-Uses exponential backoff with jitter (see `pkg/backoff/exponential.go`):
+Uses exponential backoff without jitter (see `pkg/backoff/exponential.go`):
 
 - Each retry attempt increases the delay exponentially, starting from `--min-backoff-delay`.
 - The delay is capped at `--max-backoff-delay`.
