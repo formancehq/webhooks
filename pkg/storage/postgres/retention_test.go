@@ -138,6 +138,52 @@ func TestPurgeFinishedAttemptsDisabledRetention(t *testing.T) {
 	require.NotContains(t, remaining, oldFailed)
 }
 
+func TestPurgeFinishedAttemptsPreservesFailedHistoryForActiveRetry(t *testing.T) {
+	store, db := newTestStoreWithDB(t)
+	ctx := context.Background()
+	cfg := insertConfig(t, store)
+
+	webhookID := uuid.NewString()
+	payload, _ := json.Marshal(map[string]string{"type": "test.event"})
+	old := time.Now().UTC().Add(-72 * time.Hour)
+	nextRetry := time.Now().UTC().Add(time.Hour)
+	oldFailed := webhooks.Attempt{
+		ID:           uuid.NewString(),
+		WebhookID:    webhookID,
+		Config:       cfg,
+		Payload:      string(payload),
+		StatusCode:   500,
+		RetryAttempt: 1,
+		Status:       webhooks.StatusAttemptFailed,
+		CreatedAt:    old,
+		UpdatedAt:    old,
+	}
+	pending := webhooks.Attempt{
+		ID:             uuid.NewString(),
+		WebhookID:      webhookID,
+		Config:         cfg,
+		Payload:        string(payload),
+		StatusCode:     500,
+		RetryAttempt:   2,
+		Status:         webhooks.StatusAttemptToRetry,
+		NextRetryAfter: nextRetry,
+		CreatedAt:      nextRetry,
+		UpdatedAt:      nextRetry,
+	}
+	standaloneFailed := insertAttemptAged(t, store, cfg, webhooks.StatusAttemptFailed, old)
+	require.NoError(t, store.InsertOneAttempt(ctx, oldFailed))
+	require.NoError(t, store.InsertOneAttempt(ctx, pending))
+
+	deleted, err := store.PurgeFinishedAttempts(ctx, 0, 24*time.Hour, 100)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, deleted, "only terminal failed attempts without active retry siblings should be purged")
+
+	remaining := remainingAttemptIDs(t, db)
+	require.Contains(t, remaining, oldFailed.ID, "failed history is needed to keep abort-after anchored")
+	require.Contains(t, remaining, pending.ID)
+	require.NotContains(t, remaining, standaloneFailed)
+}
+
 func TestPurgeFinishedAttemptsBatches(t *testing.T) {
 	store, _ := newTestStoreWithDB(t)
 	ctx := context.Background()

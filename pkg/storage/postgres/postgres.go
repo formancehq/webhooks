@@ -325,12 +325,22 @@ func (s Store) PurgeFinishedAttempts(ctx context.Context, successOlderThan, fail
 		res, err := s.db.NewRaw(`
 			DELETE FROM attempts
 			WHERE id IN (
-				SELECT id FROM attempts
-				WHERE status = ? AND updated_at < ?
+				SELECT candidate.id FROM attempts candidate
+				WHERE candidate.status = ? AND candidate.updated_at < ?
+				  AND (
+					? != ?
+					OR NOT EXISTS (
+						SELECT 1
+						FROM attempts pending
+						WHERE pending.webhook_id = candidate.webhook_id
+						  AND pending.status IN (?, ?)
+					)
+				  )
 				LIMIT ?
 				FOR UPDATE SKIP LOCKED
 			)
-		`, t.status, cutoff, batchSize).Exec(ctx)
+		`, t.status, cutoff, t.status, webhooks.StatusAttemptFailed,
+			webhooks.StatusAttemptToRetry, webhooks.StatusAttemptRetrying, batchSize).Exec(ctx)
 		if err != nil {
 			return total, errors.Wrapf(err, "purging %q attempts", t.status)
 		}
