@@ -41,6 +41,7 @@ func newServerHandler(
 	authenticator auth.Authenticator,
 	publisher message.Publisher,
 	debug bool,
+	auditEnabled bool,
 ) http.Handler {
 	h := &serverHandler{
 		Mux:        chi.NewRouter(),
@@ -48,7 +49,9 @@ func newServerHandler(
 		httpClient: httpClient,
 	}
 
-	h.Use(httpaudit.Middleware(publisher, "audit-events", "webhooks", nil))
+	if auditEnabled {
+		h.Use(httpaudit.Middleware(publisher, "audit-events", "webhooks", nil))
+	}
 	h.Use(func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

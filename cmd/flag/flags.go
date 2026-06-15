@@ -12,6 +12,8 @@ const (
 	Listen   = "listen"
 	Worker   = "worker"
 
+	AuditEnabled = "audit-enabled"
+
 	RetryPeriod     = "retry-period"
 	RetryBatchSize  = "retry-batch-size"
 	AbortAfter      = "abort-after"
@@ -53,6 +55,7 @@ func Init(flagSet *pflag.FlagSet) {
 	flagSet.Duration(RetryPeriod, DefaultRetryPeriod, "worker retry period")
 	flagSet.Int(RetryBatchSize, DefaultRetryBatchSize, "number of webhook IDs to claim per retry tick")
 	flagSet.Bool(Worker, false, "Enable worker on server")
+	flagSet.Bool(AuditEnabled, false, "Enable HTTP audit events publishing")
 
 	flagSet.StringSlice(KafkaTopics, []string{DefaultKafkaTopic}, "Kafka topics")
 

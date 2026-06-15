@@ -17,7 +17,7 @@ import (
 	"go.uber.org/fx"
 )
 
-func FXModuleFromFlags(cmd *cobra.Command, addr string, debug bool) fx.Option {
+func FXModuleFromFlags(cmd *cobra.Command, addr string, debug bool, auditEnabled bool) fx.Option {
 	var options []fx.Option
 
 	options = append(options,
@@ -34,7 +34,7 @@ func FXModuleFromFlags(cmd *cobra.Command, addr string, debug bool) fx.Option {
 			authenticator auth.Authenticator,
 			publisher message.Publisher,
 		) http.Handler {
-			return newServerHandler(store, httpClient, logger, info, authenticator, publisher, debug)
+			return newServerHandler(store, httpClient, logger, info, authenticator, publisher, debug, auditEnabled)
 		},
 	), fx.Invoke(func(lc fx.Lifecycle, handler http.Handler) {
 		lc.Append(httpserver.NewHook(handler, httpserver.WithAddress(addr)))
