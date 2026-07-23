@@ -8,7 +8,7 @@ require (
 	github.com/ThreeDotsLabs/watermill v1.5.1
 	github.com/alitto/pond v1.9.2
 	github.com/formancehq/go-libs/v2 v2.2.5
-	github.com/formancehq/go-libs/v5 v5.1.1-0.20260522083443-d2a60ed2e0dd
+	github.com/formancehq/go-libs/v5 v5.2.0
 	github.com/formancehq/webhooks/pkg/client v0.0.0-00010101000000-000000000000
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/google/uuid v1.6.0
