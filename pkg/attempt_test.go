@@ -94,6 +94,59 @@ func TestMakeAttempt_ResponseBodyReadErrorConsumesRetryBudget(t *testing.T) {
 	require.False(t, attempt.NextRetryAfter.IsZero())
 }
 
+func TestMakeAttempt_ResponseBodyReadErrorPreservesTerminalHTTPStatus(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		statusCode int
+		status     string
+	}{
+		{name: "success", statusCode: http.StatusOK, status: webhooks.StatusAttemptSuccess},
+		{name: "permanent failure", statusCode: http.StatusNotFound, status: webhooks.StatusAttemptFailed},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			client := &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: testCase.statusCode,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(failingResponseBody{}),
+				}, nil
+			})}
+			cfg := webhooks.Config{ConfigUser: webhooks.ConfigUser{
+				Endpoint: "https://example.com", Secret: webhooks.NewSecret(), EventTypes: []string{"test.event"},
+			}, ID: "cfg-terminal-body-error", Active: true}
+
+			attempt, err := webhooks.MakeAttempt(context.Background(), client, &fixedBackoff{delay: time.Second},
+				"attempt-id", "webhook-id", 0, cfg, "", []byte(`{"type":"test.event"}`), false)
+			require.NoError(t, err)
+			require.Equal(t, testCase.status, attempt.Status)
+			require.Equal(t, testCase.statusCode, attempt.StatusCode)
+			require.Contains(t, attempt.DeliveryError, "body read failed")
+			require.True(t, attempt.NextRetryAfter.IsZero())
+		})
+	}
+}
+
+func TestMakeAttempt_ResponseBodyReadErrorHonorsRetryAfter(t *testing.T) {
+	client := &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Header:     http.Header{"Retry-After": []string{"120"}},
+			Body:       io.NopCloser(failingResponseBody{}),
+		}, nil
+	})}
+	cfg := webhooks.Config{ConfigUser: webhooks.ConfigUser{
+		Endpoint: "https://example.com", Secret: webhooks.NewSecret(), EventTypes: []string{"test.event"},
+	}, ID: "cfg-retry-after-body-error", Active: true}
+	before := time.Now().UTC()
+
+	attempt, err := webhooks.MakeAttempt(context.Background(), client, &fixedBackoff{delay: time.Second},
+		"attempt-id", "webhook-id", 0, cfg, "", []byte(`{"type":"test.event"}`), false)
+	require.NoError(t, err)
+	require.Equal(t, webhooks.StatusAttemptToRetry, attempt.Status)
+	require.GreaterOrEqual(t, attempt.NextRetryAfter.Sub(before), 110*time.Second)
+	require.Contains(t, attempt.DeliveryError, "body read failed")
+}
+
 func TestMakeAttempt_TransportError_MaxRetriesExceeded(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	server.Close()

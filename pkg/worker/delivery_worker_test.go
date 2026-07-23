@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -24,6 +25,8 @@ type deliveryMockStore struct {
 	completed      []webhooks.Delivery
 	attempts       []webhooks.DeliveryAttempt
 	cancelled      []string
+	failedClaims   []string
+	failureReasons []string
 	findError      error
 	insertError    error
 	enqueueStarted chan struct{}
@@ -117,6 +120,14 @@ func (m *deliveryMockStore) CancelDelivery(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cancelled = append(m.cancelled, id)
+	return nil
+}
+
+func (m *deliveryMockStore) FailClaimedDelivery(_ context.Context, id string, _ time.Time, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.failedClaims = append(m.failedClaims, id)
+	m.failureReasons = append(m.failureReasons, reason)
 	return nil
 }
 func (m *deliveryMockStore) RecoverStaleDeliveries(context.Context, time.Duration) (int64, error) {
@@ -241,6 +252,71 @@ func TestDeliveryDispatcherLeavesClaimRecoverableOnConfigLookupError(t *testing.
 
 	require.Empty(t, store.completed)
 	require.Empty(t, store.cancelled, "transient lookup errors must leave the claim for stale recovery")
+}
+
+type expiredWindowPolicy struct{}
+
+func (expiredWindowPolicy) GetRetryDelay(int) (time.Duration, error) { return time.Second, nil }
+func (expiredWindowPolicy) LimitRetryWindow(time.Duration) error {
+	return errors.New("retry window elapsed")
+}
+
+func TestDeliveryDispatcherFailsExpiredDeliveryBeforeCallingEndpoint(t *testing.T) {
+	hits := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		hits++
+	}))
+	defer server.Close()
+	now := time.Now().UTC()
+	cycleStartedAt := now.Add(-2 * time.Hour)
+	store := &deliveryMockStore{
+		configs: []webhooks.Config{{
+			ConfigUser: webhooks.ConfigUser{Endpoint: server.URL, Secret: webhooks.NewSecret()},
+			ID:         "config-1", Active: true,
+		}},
+		claimed: []webhooks.Delivery{{
+			ID: "delivery-expired", ConfigID: "config-1", Status: webhooks.StatusDeliveryDelivering,
+			ClaimedAt: &now, CycleStartedAt: &cycleStartedAt,
+		}},
+	}
+	NewDeliveryDispatcher(store, server.Client(), time.Second, expiredWindowPolicy{}, 1).dispatch(context.Background())
+
+	require.Zero(t, hits)
+	require.Equal(t, []string{"delivery-expired"}, store.failedClaims)
+	require.Equal(t, []string{"retry window elapsed"}, store.failureReasons)
+	require.Empty(t, store.completed, "no synthetic HTTP attempt should be persisted")
+	require.Empty(t, store.attempts)
+}
+
+type cappedRetryPolicy struct{}
+
+func (cappedRetryPolicy) GetRetryDelay(int) (time.Duration, error) { return time.Second, nil }
+func (cappedRetryPolicy) CanRetryAttempt(int) error                { return errors.New("attempt cap reached") }
+
+func TestDeliveryDispatcherEnforcesAttemptCapBeforeCallingEndpoint(t *testing.T) {
+	hits := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		hits++
+	}))
+	defer server.Close()
+	now := time.Now().UTC()
+	store := &deliveryMockStore{
+		configs: []webhooks.Config{{
+			ConfigUser: webhooks.ConfigUser{Endpoint: server.URL, Secret: webhooks.NewSecret()},
+			ID:         "config-1", Active: true,
+		}},
+		claimed: []webhooks.Delivery{{
+			ID: "delivery-attempt-capped", ConfigID: "config-1", Status: webhooks.StatusDeliveryDelivering,
+			ClaimedAt: &now, CycleStartedAt: &now, AttemptCount: 15,
+		}},
+	}
+	NewDeliveryDispatcher(store, server.Client(), time.Second, cappedRetryPolicy{}, 1).dispatch(context.Background())
+
+	require.Zero(t, hits)
+	require.Equal(t, []string{"delivery-attempt-capped"}, store.failedClaims)
+	require.Equal(t, []string{"attempt cap reached"}, store.failureReasons)
+	require.Empty(t, store.completed)
+	require.Empty(t, store.attempts)
 }
 
 func TestDeliveryDispatcherFailsPermanent404WithoutRetry(t *testing.T) {

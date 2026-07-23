@@ -113,6 +113,31 @@ func TestEnqueueEventTargetsOnlyActiveConfigsAndDeduplicatesBrokerRedelivery(t *
 	require.Equal(t, webhooks.StatusDeliveryCancelled, page.Data[0].Status)
 }
 
+func TestFailClaimedDeliveryEndsClaimWithoutCreatingAnAttempt(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	config := insertDeliveryConfig(t, store)
+	delivery := newDelivery(config.ID, "expired-delivery", webhooks.StatusDeliveryPending, time.Now().UTC().Add(-time.Second))
+	delivery.CycleStartedAt = &delivery.CreatedAt
+	require.NoError(t, store.InsertDeliveries(ctx, []webhooks.Delivery{delivery}))
+	claimed, err := store.ClaimDeliveries(ctx, 1)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	require.NotNil(t, claimed[0].ClaimedAt)
+
+	require.NoError(t, store.FailClaimedDelivery(ctx, claimed[0].ID, *claimed[0].ClaimedAt, "retry window elapsed"))
+	stored, err := store.GetDelivery(ctx, delivery.ID)
+	require.NoError(t, err)
+	require.Equal(t, webhooks.StatusDeliveryFailed, stored.Status)
+	require.Equal(t, "retry window elapsed", stored.LastError)
+	require.Nil(t, stored.ClaimedAt)
+	require.Nil(t, stored.NextAttemptAt)
+	require.Zero(t, stored.AttemptCount)
+	attempts, _, err := store.FindDeliveryAttempts(ctx, delivery.ID, nil, 10)
+	require.NoError(t, err)
+	require.Empty(t, attempts)
+}
+
 func TestReplayDeliveryResetsFailedBudgetAndIsIdempotent(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
@@ -306,6 +331,29 @@ func TestFinalBackfillReconcilesLegacyRetryCompletedAfterInitialPass(t *testing.
 	require.Nil(t, final.NextAttemptAt)
 }
 
+func TestBackfillCancelsLegacyRetryForInactiveConfig(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	config := insertDeliveryConfig(t, store)
+	webhookID := uuid.NewString()
+	created := time.Now().UTC().Add(-time.Hour)
+	require.NoError(t, store.InsertOneAttempt(ctx, webhooks.Attempt{
+		ID: uuid.NewString(), WebhookID: webhookID, Config: config, Payload: `{"type":"test.event"}`,
+		StatusCode: 500, Status: webhooks.StatusAttemptToRetry, CreatedAt: created, UpdatedAt: created,
+		NextRetryAfter: created.Add(time.Minute),
+	}))
+	_, err := store.UpdateOneConfigActivation(ctx, config.ID, false)
+	require.NoError(t, err)
+
+	migrated, err := store.BackfillDeliveries(ctx, 30*24*time.Hour, 90*24*time.Hour, 100)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, migrated)
+	delivery, err := store.GetDelivery(ctx, webhookID)
+	require.NoError(t, err)
+	require.Equal(t, webhooks.StatusDeliveryCancelled, delivery.Status)
+	require.Nil(t, delivery.NextAttemptAt)
+}
+
 func TestBackfillCreatesNonReplayableTombstoneWithoutLegacySecret(t *testing.T) {
 	store, db := newTestStoreWithDB(t)
 	ctx := context.Background()
@@ -314,7 +362,7 @@ func TestBackfillCreatesNonReplayableTombstoneWithoutLegacySecret(t *testing.T) 
 	webhookID := uuid.NewString()
 	require.NoError(t, store.InsertOneAttempt(ctx, webhooks.Attempt{
 		ID: uuid.NewString(), WebhookID: webhookID, Config: config, Payload: `{"type":"test.event"}`,
-		StatusCode: 404, Status: webhooks.StatusAttemptFailed,
+		StatusCode: 500, Status: webhooks.StatusAttemptToRetry, NextRetryAfter: time.Now().UTC().Add(time.Minute),
 	}))
 	_, err := db.NewDelete().Model((*webhooks.Config)(nil)).Where("id = ?", config.ID).Exec(ctx)
 	require.NoError(t, err)
@@ -327,6 +375,10 @@ func TestBackfillCreatesNonReplayableTombstoneWithoutLegacySecret(t *testing.T) 
 	require.False(t, tombstone.Active)
 	require.NotNil(t, tombstone.DeletedAt)
 	require.NotEqual(t, legacySecret, tombstone.Secret)
+	delivery, err := store.GetDelivery(ctx, webhookID)
+	require.NoError(t, err)
+	require.Equal(t, webhooks.StatusDeliveryCancelled, delivery.Status)
+	require.Nil(t, delivery.NextAttemptAt)
 	_, _, err = store.ReplayDelivery(ctx, webhookID, "tombstone-replay")
 	require.ErrorIs(t, err, storage.ErrDeliveryNotReplayable)
 }

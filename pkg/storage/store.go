@@ -51,6 +51,7 @@ type Store interface {
 	EnqueueEvent(ctx context.Context, eventID, idempotencyKey, eventType, payload string, createdAt time.Time) error
 	ClaimDeliveries(ctx context.Context, limit int) ([]webhooks.Delivery, error)
 	CompleteDelivery(ctx context.Context, delivery webhooks.Delivery, attempt webhooks.DeliveryAttempt) (string, error)
+	FailClaimedDelivery(ctx context.Context, id string, claimedAt time.Time, reason string) error
 	CancelDelivery(ctx context.Context, id string) error
 	RecoverStaleDeliveries(ctx context.Context, staleDuration time.Duration) (int64, error)
 	CountPendingDeliveries(ctx context.Context) (int64, error)

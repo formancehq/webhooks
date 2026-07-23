@@ -39,6 +39,16 @@ func isPermanentClientError(statusCode int) bool {
 	}
 }
 
+func terminalAttemptStatus(statusCode int) (string, bool) {
+	if statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices {
+		return StatusAttemptSuccess, true
+	}
+	if isPermanentClientError(statusCode) {
+		return StatusAttemptFailed, true
+	}
+	return "", false
+}
+
 // maxRetryAfterDelay clamps how far a Retry-After header can push the next
 // retry: the endpoint controls this value, so an absurd one must not park a
 // delivery years in the future.
@@ -189,47 +199,58 @@ func classifyResponse(ctx context.Context, resp *http.Response, doErr error, ret
 		attempt.StatusCode = resp.StatusCode
 		attempt.ResponseExcerpt = string(body)
 		attempt.DeliveryError = errors.Wrap(err, "io.ReadAll").Error()
-		return scheduleAttemptRetry(attempt, retryPolicy, attemptNb, now, firstAttemptAt, nil), nil
+		if status, terminal := terminalAttemptStatus(resp.StatusCode); terminal {
+			attempt.Status = status
+			return attempt, nil
+		}
+		delay, delayErr := resolveRetryDelay(retryPolicy, attemptNb, now, resp.Header.Get("Retry-After"))
+		if delayErr != nil {
+			attempt.Status = StatusAttemptFailed
+			return attempt, nil
+		}
+		return scheduleAttemptRetry(attempt, retryPolicy, attemptNb, now, firstAttemptAt, &delay), nil
 	}
 	logging.FromContext(ctx).Debugf("webhooks.MakeAttempt: server response body: %s", string(body))
 	attempt.ResponseExcerpt = string(body)
 
 	attempt.StatusCode = resp.StatusCode
 
-	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
-		attempt.Status = StatusAttemptSuccess
-		return attempt, nil
-	}
-
-	// Permanent client errors will never succeed on retry — fail fast instead of
+	// Successful responses and permanent client errors are terminal. Permanent
+	// client errors will never succeed on retry, so fail them fast instead of
 	// retrying for the whole abort-after window.
-	if isPermanentClientError(resp.StatusCode) {
-		attempt.Status = StatusAttemptFailed
+	if status, terminal := terminalAttemptStatus(resp.StatusCode); terminal {
+		attempt.Status = status
 		return attempt, nil
 	}
 
-	delay, err := retryPolicy.GetRetryDelay(attemptNb)
+	delay, err := resolveRetryDelay(retryPolicy, attemptNb, now, resp.Header.Get("Retry-After"))
 	if err != nil {
 		attempt.Status = StatusAttemptFailed
 		return attempt, nil
+	}
+	return scheduleAttemptRetry(attempt, retryPolicy, attemptNb, now, firstAttemptAt, &delay), nil
+}
+
+func resolveRetryDelay(retryPolicy BackoffPolicy, attemptNb int, now time.Time, retryAfterHeader string) (time.Duration, error) {
+	delay, err := retryPolicy.GetRetryDelay(attemptNb)
+	if err != nil {
+		return 0, err
 	}
 
 	// Respect an explicit Retry-After (429/503) when it asks us to wait longer
 	// than our computed backoff, but never let endpoint-controlled delays bypass
 	// the retry policy window.
-	if retryAfter, ok := parseRetryAfter(resp.Header.Get("Retry-After"), now); ok && retryAfter > delay {
+	if retryAfter, ok := parseRetryAfter(retryAfterHeader, now); ok && retryAfter > delay {
 		if limiter, ok := retryPolicy.(RetryDelayLimiter); ok {
 			var limitErr error
 			retryAfter, limitErr = limiter.LimitRetryDelay(attemptNb, retryAfter)
 			if limitErr != nil {
-				attempt.Status = StatusAttemptFailed
-				return attempt, nil
+				return 0, limitErr
 			}
 		}
 		delay = retryAfter
 	}
-
-	return scheduleAttemptRetry(attempt, retryPolicy, attemptNb, now, firstAttemptAt, &delay), nil
+	return delay, nil
 }
 
 func scheduleAttemptRetry(attempt Attempt, retryPolicy BackoffPolicy, attemptNb int, now, firstAttemptAt time.Time, requestedDelay *time.Duration) Attempt {

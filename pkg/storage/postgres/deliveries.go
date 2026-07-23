@@ -143,6 +143,27 @@ func (s Store) CancelDelivery(ctx context.Context, id string) error {
 	return nil
 }
 
+func (s Store) FailClaimedDelivery(ctx context.Context, id string, claimedAt time.Time, reason string) error {
+	res, err := s.db.NewUpdate().Model((*webhooks.Delivery)(nil)).
+		Where("id = ?", id).
+		Where("status = ?", webhooks.StatusDeliveryDelivering).
+		Where("claimed_at = ?", claimedAt).
+		Set("status = ?", webhooks.StatusDeliveryFailed).
+		Set("claimed_at = NULL, next_attempt_at = NULL, last_error = ?, updated_at = NOW()", reason).
+		Exec(ctx)
+	if err != nil {
+		return errors.Wrap(err, "failing claimed delivery")
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return errors.Wrap(err, "reading failed delivery rows affected")
+	}
+	if affected != 1 {
+		return storage.ErrDeliveryNotFound
+	}
+	return nil
+}
+
 func (s Store) RecoverStaleDeliveries(ctx context.Context, staleDuration time.Duration) (int64, error) {
 	if staleDuration <= 0 {
 		staleDuration = 5 * time.Minute
@@ -575,11 +596,10 @@ func (s Store) backfillWebhook(ctx context.Context, webhookID string) error {
 		return errors.Wrap(err, "beginning backfill transaction")
 	}
 	defer func() { _ = tx.Rollback() }()
-	var count int
-	if count, err = tx.NewSelect().Model((*webhooks.Config)(nil)).Where("id = ?", config.ID).Count(ctx); err != nil {
-		return errors.Wrap(err, "checking backfill config")
-	}
-	if count == 0 {
+	currentConfig := webhooks.Config{}
+	err = tx.NewSelect().Model(&currentConfig).Where("id = ?", config.ID).For("UPDATE").Scan(ctx)
+	configActive := false
+	if errors.Is(err, sql.ErrNoRows) {
 		now := time.Now().UTC()
 		config.Active = false
 		config.DeletedAt = &now
@@ -587,6 +607,11 @@ func (s Store) backfillWebhook(ctx context.Context, webhookID string) error {
 		if _, err := tx.NewInsert().Model(&config).Exec(ctx); err != nil {
 			return errors.Wrap(err, "creating tombstone config")
 		}
+	} else if err != nil {
+		return errors.Wrap(err, "checking backfill config")
+	} else {
+		config = currentConfig
+		configActive = config.Active && config.DeletedAt == nil
 	}
 
 	last := attempts[len(attempts)-1]
@@ -598,6 +623,9 @@ func (s Store) backfillWebhook(ctx context.Context, webhookID string) error {
 	}
 	if status != webhooks.StatusDeliveryPending && last.Status == webhooks.StatusAttemptSuccess {
 		status = webhooks.StatusDeliverySucceeded
+	}
+	if status == webhooks.StatusDeliveryPending && !configActive {
+		status = webhooks.StatusDeliveryCancelled
 	}
 	var event publish.EventMessage
 	_ = json.Unmarshal([]byte(last.Payload), &event)

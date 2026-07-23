@@ -36,6 +36,7 @@ type deliveryDispatchStore interface {
 	FindManyConfigs(ctx context.Context, filter map[string]any) ([]webhooks.Config, error)
 	ClaimDeliveries(ctx context.Context, limit int) ([]webhooks.Delivery, error)
 	CompleteDelivery(ctx context.Context, delivery webhooks.Delivery, attempt webhooks.DeliveryAttempt) (string, error)
+	FailClaimedDelivery(ctx context.Context, id string, claimedAt time.Time, reason string) error
 	CancelDelivery(ctx context.Context, id string) error
 	RecoverStaleDeliveries(ctx context.Context, staleDuration time.Duration) (int64, error)
 }
@@ -112,6 +113,28 @@ func (d *DeliveryDispatcher) dispatchOne(ctx context.Context, delivery webhooks.
 	}
 
 	now := time.Now().UTC()
+	var preflightErr error
+	if delivery.AttemptCount > 0 {
+		if limiter, ok := d.retryPolicy.(webhooks.RetryAttemptLimiter); ok {
+			preflightErr = limiter.CanRetryAttempt(delivery.AttemptCount)
+		}
+	}
+	if preflightErr == nil && delivery.CycleStartedAt != nil {
+		preflightErr = limitRetryWindowBeforeAttempt(d.retryPolicy, *delivery.CycleStartedAt)
+	}
+	if preflightErr != nil {
+		if delivery.ClaimedAt == nil {
+			logging.FromContext(ctx).Errorf("failing delivery %s without claim timestamp", delivery.ID)
+			return
+		}
+		if err := d.store.FailClaimedDelivery(ctx, delivery.ID, *delivery.ClaimedAt, preflightErr.Error()); err != nil {
+			logging.FromContext(ctx).Errorf("failing delivery %s before attempt: %s", delivery.ID, err)
+			span.RecordError(err)
+			return
+		}
+		metrics.RecordDeliveryTransition(ctx, webhooks.StatusDeliveryFailed, "normal", 1)
+		return
+	}
 	if delivery.CycleStartedAt == nil {
 		delivery.CycleStartedAt = &now
 	}
