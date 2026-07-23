@@ -64,9 +64,9 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 	topics, _ := cmd.Flags().GetStringSlice(flag.KafkaTopics)
 	listen, _ := cmd.Flags().GetString(flag.Listen)
 	retention := retentionConfigFromFlags(cmd)
-	pipeline, _ := cmd.Flags().GetString(flag.DeliveryPipeline)
-	if pipeline != "legacy" && pipeline != "deliveries" {
-		return fmt.Errorf("invalid --%s value %q: expected legacy or deliveries", flag.DeliveryPipeline, pipeline)
+	pipeline, err := deliveryPipelineFromFlags(cmd)
+	if err != nil {
+		return err
 	}
 
 	return service.New(
@@ -97,6 +97,17 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 			pipeline == "deliveries",
 		),
 	).Run(cmd)
+}
+
+func deliveryPipelineFromFlags(cmd *cobra.Command) (string, error) {
+	pipeline, err := cmd.Flags().GetString(flag.DeliveryPipeline)
+	if err != nil {
+		return "", err
+	}
+	if pipeline != "legacy" && pipeline != "deliveries" {
+		return "", fmt.Errorf("invalid --%s value %q: expected legacy or deliveries", flag.DeliveryPipeline, pipeline)
+	}
+	return pipeline, nil
 }
 
 func retentionConfigFromFlags(cmd *cobra.Command) worker.RetentionConfig {

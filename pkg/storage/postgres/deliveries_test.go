@@ -445,6 +445,8 @@ func TestStaleWorkerCannotCompleteAReclaimedDelivery(t *testing.T) {
 	firstClaim, err := store.ClaimDeliveries(ctx, 1)
 	require.NoError(t, err)
 	require.Len(t, firstClaim, 1)
+	require.NotNil(t, firstClaim[0].CycleStartedAt)
+	cycleStartedAt := *firstClaim[0].CycleStartedAt
 
 	staleClaimedAt := time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Microsecond)
 	_, err = db.NewUpdate().Model((*webhooks.Delivery)(nil)).Where("id = ?", delivery.ID).
@@ -457,6 +459,8 @@ func TestStaleWorkerCannotCompleteAReclaimedDelivery(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, secondClaim, 1)
 	require.NotEqual(t, *firstClaim[0].ClaimedAt, *secondClaim[0].ClaimedAt)
+	require.NotNil(t, secondClaim[0].CycleStartedAt)
+	require.Equal(t, cycleStartedAt, *secondClaim[0].CycleStartedAt, "recovery and re-claim must not reset the retry window")
 
 	completedAt := time.Now().UTC()
 	stale := firstClaim[0]

@@ -70,7 +70,10 @@ func (s Store) ClaimDeliveries(ctx context.Context, limit int) ([]webhooks.Deliv
 			LIMIT ?
 		)
 		UPDATE deliveries d
-		SET status = ?, claimed_at = NOW(), updated_at = NOW()
+		SET status = ?,
+			claimed_at = NOW(),
+			cycle_started_at = COALESCE(cycle_started_at, NOW()),
+			updated_at = NOW()
 		FROM candidates
 		WHERE d.id = candidates.id
 		RETURNING d.*

@@ -15,6 +15,7 @@ import (
 	"github.com/formancehq/go-libs/v2/publish"
 	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/fx"
 )
 
 type deliveryMockStore struct {
@@ -31,6 +32,9 @@ type deliveryMockStore struct {
 	insertError    error
 	enqueueStarted chan struct{}
 	enqueueRelease chan struct{}
+	claimStarted   chan struct{}
+	claimCancelled chan struct{}
+	claimRelease   chan struct{}
 }
 
 func (m *deliveryMockStore) FindManyConfigs(context.Context, map[string]any) ([]webhooks.Config, error) {
@@ -95,7 +99,14 @@ func runDeliveryRouter(t *testing.T, store deliveryEnqueuer) *singleMessageSubsc
 	return subscriber
 }
 
-func (m *deliveryMockStore) ClaimDeliveries(_ context.Context, limit int) ([]webhooks.Delivery, error) {
+func (m *deliveryMockStore) ClaimDeliveries(ctx context.Context, limit int) ([]webhooks.Delivery, error) {
+	if m.claimStarted != nil {
+		close(m.claimStarted)
+		<-ctx.Done()
+		close(m.claimCancelled)
+		<-m.claimRelease
+		return nil, ctx.Err()
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if len(m.claimed) > limit {
@@ -237,6 +248,61 @@ func TestDeliveryDispatcherPersistsRetryableFailure(t *testing.T) {
 	require.Equal(t, webhooks.OutcomeDeliveryRetryableFailure, store.attempts[0].Outcome)
 	require.Equal(t, 500, store.attempts[0].StatusCode)
 	require.Equal(t, "temporary", store.attempts[0].ResponseExcerpt)
+}
+
+func TestNewDeliveryDispatcherAppliesDefaultHTTPTimeout(t *testing.T) {
+	client := &http.Client{}
+	dispatcher := NewDeliveryDispatcher(&deliveryMockStore{}, client, time.Second, &noRetryPolicy{}, 1)
+	require.Equal(t, defaultDeliveryHTTPTimeout, dispatcher.httpClient.Timeout)
+	require.Zero(t, client.Timeout, "the injected client must not be mutated")
+
+	configured := &http.Client{Timeout: 5 * time.Second}
+	dispatcher = NewDeliveryDispatcher(&deliveryMockStore{}, configured, time.Second, &noRetryPolicy{}, 1)
+	require.Same(t, configured, dispatcher.httpClient)
+	require.Equal(t, 5*time.Second, dispatcher.httpClient.Timeout)
+}
+
+type lifecycleRecorder struct {
+	hook fx.Hook
+}
+
+func (l *lifecycleRecorder) Append(hook fx.Hook) {
+	l.hook = hook
+}
+
+func TestRunDeliveryDispatcherWaitsForRunToFinishOnStop(t *testing.T) {
+	claimStarted := make(chan struct{})
+	claimCancelled := make(chan struct{})
+	claimRelease := make(chan struct{})
+	store := &deliveryMockStore{
+		claimStarted: claimStarted, claimCancelled: claimCancelled, claimRelease: claimRelease,
+	}
+	dispatcher := NewDeliveryDispatcher(store, http.DefaultClient, time.Hour, &noRetryPolicy{}, 1)
+	lifecycle := &lifecycleRecorder{}
+	runDeliveryDispatcher(lifecycle, dispatcher)
+	require.NoError(t, lifecycle.hook.OnStart(context.Background()))
+	select {
+	case <-claimStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatcher did not start claiming")
+	}
+
+	stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	stopped := make(chan error, 1)
+	go func() { stopped <- lifecycle.hook.OnStop(stopCtx) }()
+	select {
+	case <-claimCancelled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatcher claim did not observe shutdown cancellation")
+	}
+	select {
+	case <-stopped:
+		t.Fatal("shutdown returned before the dispatcher finished")
+	default:
+	}
+	close(claimRelease)
+	require.NoError(t, <-stopped)
 }
 
 func TestDeliveryDispatcherLeavesClaimRecoverableOnConfigLookupError(t *testing.T) {

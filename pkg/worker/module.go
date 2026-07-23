@@ -129,13 +129,21 @@ func registerQueueDepthMetric(store storage.Store, deliveryPipeline bool) error 
 
 func runDeliveryDispatcher(lc fx.Lifecycle, dispatcher *DeliveryDispatcher) {
 	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			go dispatcher.Run(ctx)
+			go func() {
+				defer close(done)
+				dispatcher.Run(ctx)
+			}()
 			return nil
 		},
-		OnStop: func(context.Context) error {
+		OnStop: func(stopCtx context.Context) error {
 			cancel()
+			select {
+			case <-done:
+			case <-stopCtx.Done():
+			}
 			return nil
 		},
 	})

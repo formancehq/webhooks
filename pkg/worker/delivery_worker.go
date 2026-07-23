@@ -19,6 +19,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+const defaultDeliveryHTTPTimeout = 30 * time.Second
+
 type DeliveryDispatcher struct {
 	store       deliveryDispatchStore
 	httpClient  *http.Client
@@ -44,6 +46,13 @@ type deliveryDispatchStore interface {
 func NewDeliveryDispatcher(store deliveryDispatchStore, httpClient *http.Client, period time.Duration, retryPolicy webhooks.BackoffPolicy, batchSize int) *DeliveryDispatcher {
 	if batchSize <= 0 {
 		batchSize = 50
+	}
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: defaultDeliveryHTTPTimeout}
+	} else if httpClient.Timeout <= 0 {
+		boundedClient := *httpClient
+		boundedClient.Timeout = defaultDeliveryHTTPTimeout
+		httpClient = &boundedClient
 	}
 	return &DeliveryDispatcher{
 		store: store, httpClient: httpClient, period: period, retryPolicy: retryPolicy,
