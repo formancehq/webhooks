@@ -168,6 +168,63 @@ func Migrate(ctx context.Context, db *bun.DB) error {
 				return errors.Wrap(err, "creating index for first attempt lookup")
 			},
 		},
+		migrations.Migration{
+			Name: "Add durable deliveries pipeline",
+			Up: func(ctx context.Context, tx bun.IDB) error {
+				if _, err := tx.NewAddColumn().
+					Table("configs").
+					ColumnExpr("deleted_at timestamptz").
+					IfNotExists().
+					Exec(ctx); err != nil {
+					return errors.Wrap(err, "adding configs.deleted_at")
+				}
+
+				if _, err := tx.NewCreateTable().Model((*webhooks.Delivery)(nil)).
+					IfNotExists().Exec(ctx); err != nil {
+					return errors.Wrap(err, "creating deliveries table")
+				}
+				if _, err := tx.NewCreateTable().Model((*webhooks.DeliveryAttempt)(nil)).
+					IfNotExists().Exec(ctx); err != nil {
+					return errors.Wrap(err, "creating delivery_attempts table")
+				}
+				if _, err := tx.NewCreateTable().Model((*webhooks.ReplayRequestRecord)(nil)).
+					IfNotExists().Exec(ctx); err != nil {
+					return errors.Wrap(err, "creating replay_requests table")
+				}
+
+				_, err := tx.ExecContext(ctx, `
+					DO $$ BEGIN
+						ALTER TABLE deliveries
+							ADD CONSTRAINT deliveries_config_id_fkey
+							FOREIGN KEY (config_id) REFERENCES configs(id) ON DELETE RESTRICT;
+					EXCEPTION WHEN duplicate_object THEN NULL;
+					END $$;
+					DO $$ BEGIN
+						ALTER TABLE delivery_attempts
+							ADD CONSTRAINT delivery_attempts_delivery_id_fkey
+							FOREIGN KEY (delivery_id) REFERENCES deliveries(id) ON DELETE CASCADE;
+					EXCEPTION WHEN duplicate_object THEN NULL;
+					END $$;
+					CREATE UNIQUE INDEX IF NOT EXISTS idx_deliveries_event_config
+						ON deliveries (event_id, config_id);
+					CREATE INDEX IF NOT EXISTS idx_deliveries_pending_due
+						ON deliveries (next_attempt_at, id) WHERE status = 'pending';
+					CREATE INDEX IF NOT EXISTS idx_deliveries_delivering_recovery
+						ON deliveries (claimed_at, id) WHERE status = 'delivering';
+					CREATE INDEX IF NOT EXISTS idx_deliveries_created
+						ON deliveries (created_at, id);
+					CREATE INDEX IF NOT EXISTS idx_deliveries_config_status_created
+						ON deliveries (config_id, status, created_at, id);
+					CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_attempts_sequence
+						ON delivery_attempts (delivery_id, replay_generation, attempt_number);
+					CREATE INDEX IF NOT EXISTS idx_delivery_attempts_delivery_created
+						ON delivery_attempts (delivery_id, created_at, id);
+					CREATE INDEX IF NOT EXISTS idx_replay_requests_created
+						ON replay_requests (created_at);
+				`)
+				return errors.Wrap(err, "creating durable delivery constraints and indexes")
+			},
+		},
 	)
 
 	return migrator.Up(ctx)

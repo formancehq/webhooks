@@ -76,16 +76,19 @@ const (
 type Attempt struct {
 	bun.BaseModel `bun:"table:attempts"`
 
-	ID             string    `json:"id" bun:",pk"`
-	WebhookID      string    `json:"webhookID" bun:"webhook_id"`
-	CreatedAt      time.Time `json:"createdAt" bun:"created_at,nullzero,notnull,default:current_timestamp"`
-	UpdatedAt      time.Time `json:"updatedAt" bun:"updated_at,nullzero,notnull,default:current_timestamp"`
-	Config         Config    `json:"config" bun:"type:jsonb"`
-	Payload        string    `json:"payload"`
-	StatusCode     int       `json:"statusCode" bun:"status_code"`
-	RetryAttempt   int       `json:"retryAttempt" bun:"retry_attempt"`
-	Status         string    `json:"status"`
-	NextRetryAfter time.Time `json:"nextRetryAfter,omitempty" bun:"next_retry_after,nullzero"`
+	ID              string        `json:"id" bun:",pk"`
+	WebhookID       string        `json:"webhookID" bun:"webhook_id"`
+	CreatedAt       time.Time     `json:"createdAt" bun:"created_at,nullzero,notnull,default:current_timestamp"`
+	UpdatedAt       time.Time     `json:"updatedAt" bun:"updated_at,nullzero,notnull,default:current_timestamp"`
+	Config          Config        `json:"config" bun:"type:jsonb"`
+	Payload         string        `json:"payload"`
+	StatusCode      int           `json:"statusCode" bun:"status_code"`
+	RetryAttempt    int           `json:"retryAttempt" bun:"retry_attempt"`
+	Status          string        `json:"status"`
+	NextRetryAfter  time.Time     `json:"nextRetryAfter,omitempty" bun:"next_retry_after,nullzero"`
+	ResponseExcerpt string        `json:"-" bun:"-"`
+	DeliveryError   string        `json:"-" bun:"-"`
+	Duration        time.Duration `json:"-" bun:"-"`
 }
 
 type attemptOptions struct {
@@ -151,8 +154,12 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy Backo
 	if err != nil {
 		return Attempt{}, err
 	}
+	attempt.Duration = time.Since(start)
+	if doErr != nil {
+		attempt.DeliveryError = doErr.Error()
+	}
 
-	metrics.RecordDelivery(ctx, attempt.Status, attempt.StatusCode, time.Since(start))
+	metrics.RecordDelivery(ctx, attempt.Status, attempt.StatusCode, attempt.Duration)
 	return attempt, nil
 }
 
@@ -166,19 +173,8 @@ func classifyResponse(ctx context.Context, resp *http.Response, doErr error, ret
 		// Transport/timeout failure — return a retryable attempt so the record is
 		// persisted and the retry loop picks it up instead of losing the event.
 		attempt.StatusCode = 0
-		delay, delayErr := retryPolicy.GetRetryDelay(attemptNb)
-		if delayErr != nil {
-			attempt.Status = StatusAttemptFailed
-			return attempt, nil
-		}
-		nextRetryAfter := now.Add(delay)
-		if err := limitRetryWindow(retryPolicy, firstAttemptAt, nextRetryAfter); err != nil {
-			attempt.Status = StatusAttemptFailed
-			return attempt, nil
-		}
-		attempt.Status = StatusAttemptToRetry
-		attempt.NextRetryAfter = nextRetryAfter
-		return attempt, nil
+		attempt.DeliveryError = doErr.Error()
+		return scheduleAttemptRetry(attempt, retryPolicy, attemptNb, now, firstAttemptAt, nil), nil
 	}
 
 	defer func() {
@@ -190,9 +186,13 @@ func classifyResponse(ctx context.Context, resp *http.Response, doErr error, ret
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 	if err != nil {
-		return Attempt{}, errors.Wrap(err, "io.ReadAll")
+		attempt.StatusCode = resp.StatusCode
+		attempt.ResponseExcerpt = string(body)
+		attempt.DeliveryError = errors.Wrap(err, "io.ReadAll").Error()
+		return scheduleAttemptRetry(attempt, retryPolicy, attemptNb, now, firstAttemptAt, nil), nil
 	}
 	logging.FromContext(ctx).Debugf("webhooks.MakeAttempt: server response body: %s", string(body))
+	attempt.ResponseExcerpt = string(body)
 
 	attempt.StatusCode = resp.StatusCode
 
@@ -229,14 +229,29 @@ func classifyResponse(ctx context.Context, resp *http.Response, doErr error, ret
 		delay = retryAfter
 	}
 
+	return scheduleAttemptRetry(attempt, retryPolicy, attemptNb, now, firstAttemptAt, &delay), nil
+}
+
+func scheduleAttemptRetry(attempt Attempt, retryPolicy BackoffPolicy, attemptNb int, now, firstAttemptAt time.Time, requestedDelay *time.Duration) Attempt {
+	delay := time.Duration(0)
+	if requestedDelay == nil {
+		var err error
+		delay, err = retryPolicy.GetRetryDelay(attemptNb)
+		if err != nil {
+			attempt.Status = StatusAttemptFailed
+			return attempt
+		}
+	} else {
+		delay = *requestedDelay
+	}
 	nextRetryAfter := now.Add(delay)
 	if err := limitRetryWindow(retryPolicy, firstAttemptAt, nextRetryAfter); err != nil {
 		attempt.Status = StatusAttemptFailed
-		return attempt, nil
+		return attempt
 	}
 	attempt.Status = StatusAttemptToRetry
 	attempt.NextRetryAfter = nextRetryAfter
-	return attempt, nil
+	return attempt
 }
 
 func limitRetryWindow(retryPolicy BackoffPolicy, firstAttemptAt, nextRetryAfter time.Time) error {

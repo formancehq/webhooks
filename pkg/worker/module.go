@@ -27,19 +27,29 @@ import (
 
 var Tracer = otel.Tracer("listener")
 
-func StartModule(cmd *cobra.Command, retriesCron time.Duration, retryPolicy webhooks.BackoffPolicy, retryBatchSize int, debug bool, topics []string, retention RetentionConfig) fx.Option {
+func StartModule(cmd *cobra.Command, retriesCron time.Duration, retryPolicy webhooks.BackoffPolicy, retryBatchSize int, debug bool, topics []string, retention RetentionConfig, deliveryPipeline bool) fx.Option {
 	var options []fx.Option
 
 	options = append(options, fx.Invoke(func(r *message.Router, subscriber message.Subscriber, store storage.Store, httpClient *http.Client) {
-		configureMessageRouter(r, subscriber, topics, store, httpClient, retryPolicy)
+		if deliveryPipeline {
+			configureDeliveryMessageRouter(r, subscriber, topics, store)
+		} else {
+			configureMessageRouter(r, subscriber, topics, store, httpClient, retryPolicy)
+		}
 	}))
-	options = append(options, fx.Provide(
-		func() (time.Duration, webhooks.BackoffPolicy, int) {
-			return retriesCron, retryPolicy, retryBatchSize
-		},
-		NewRetrier,
-	))
-	options = append(options, fx.Invoke(run))
+	if deliveryPipeline {
+		options = append(options,
+			fx.Provide(func(store storage.Store, httpClient *http.Client) *DeliveryDispatcher {
+				return NewDeliveryDispatcher(store, httpClient, retriesCron, retryPolicy, retryBatchSize)
+			}),
+			fx.Invoke(runDeliveryDispatcher),
+		)
+	} else {
+		options = append(options, fx.Provide(func(store storage.Store, httpClient *http.Client) (*Retrier, error) {
+			return NewRetrier(store, httpClient, retriesCron, retryPolicy, retryBatchSize)
+		}))
+		options = append(options, fx.Invoke(run))
+	}
 
 	// Only register the DB-backed queue-depth gauge when metrics are actually
 	// exported: the otlpmetrics module installs a periodic reader even with the
@@ -48,12 +58,17 @@ func StartModule(cmd *cobra.Command, retriesCron time.Duration, retryPolicy webh
 	exporter, _ := cmd.Flags().GetString(otlpmetrics.OtelMetricsExporterFlag)
 	keepInMemory, _ := cmd.Flags().GetBool(otlpmetrics.OtelMetricsKeepInMemoryFlag)
 	if exporter != "" || keepInMemory {
-		options = append(options, fx.Invoke(registerQueueDepthMetric))
+		options = append(options, fx.Invoke(func(store storage.Store) error {
+			return registerQueueDepthMetric(store, deliveryPipeline)
+		}))
 	}
 
 	if retention.Enabled() {
 		options = append(options,
 			fx.Provide(func(store storage.Store) *Retention {
+				if deliveryPipeline {
+					return NewDeliveryRetention(store, retention)
+				}
 				return NewRetention(store, retention)
 			}),
 			fx.Invoke(runRetention),
@@ -89,13 +104,19 @@ func run(lc fx.Lifecycle, w *Retrier) {
 // registerQueueDepthMetric registers the retry-queue-depth observable gauge. It
 // binds to the global meter provider (a no-op when metrics are disabled), so the
 // callback only queries the store when a real collector is scraping.
-func registerQueueDepthMetric(store storage.Store) error {
+func registerQueueDepthMetric(store storage.Store, deliveryPipeline bool) error {
 	meter := otel.GetMeterProvider().Meter("webhooks")
 	_, err := meter.Int64ObservableGauge(
 		"webhooks_retry_queue_depth",
-		metric.WithDescription("Number of attempts currently queued for retry ('to retry'), capped at 1000000"),
+		metric.WithDescription("Number of webhook deliveries currently queued, capped at 1000000"),
 		metric.WithInt64Callback(func(ctx context.Context, o metric.Int64Observer) error {
-			n, err := store.CountAttemptsToRetry(ctx)
+			var n int64
+			var err error
+			if deliveryPipeline {
+				n, err = store.CountPendingDeliveries(ctx)
+			} else {
+				n, err = store.CountAttemptsToRetry(ctx)
+			}
 			if err != nil {
 				return err
 			}
@@ -104,6 +125,20 @@ func registerQueueDepthMetric(store storage.Store) error {
 		}),
 	)
 	return err
+}
+
+func runDeliveryDispatcher(lc fx.Lifecycle, dispatcher *DeliveryDispatcher) {
+	ctx, cancel := context.WithCancel(context.Background())
+	lc.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			go dispatcher.Run(ctx)
+			return nil
+		},
+		OnStop: func(context.Context) error {
+			cancel()
+			return nil
+		},
+	})
 }
 
 func runRetention(lc fx.Lifecycle, r *Retention) {
@@ -134,7 +169,18 @@ func configureMessageRouter(r *message.Router, subscriber message.Subscriber, to
 	}
 }
 
-func processMessages(store storage.Store, httpClient *http.Client, retryPolicy webhooks.BackoffPolicy) func(msg *message.Message) error {
+func configureDeliveryMessageRouter(r *message.Router, subscriber message.Subscriber, topics []string, store storage.Store) {
+	for _, topic := range topics {
+		r.AddConsumerHandler(fmt.Sprintf("messages-%s", topic), topic, subscriber, processDeliveryMessages(store))
+	}
+}
+
+type messageStore interface {
+	FindManyConfigs(ctx context.Context, filter map[string]any) ([]webhooks.Config, error)
+	InsertOneAttempt(ctx context.Context, attempt webhooks.Attempt) error
+}
+
+func processMessages(store messageStore, httpClient *http.Client, retryPolicy webhooks.BackoffPolicy) func(msg *message.Message) error {
 	return func(msg *message.Message) error {
 		var ev *publish.EventMessage
 		span, ev, err := publish.UnmarshalMessage(msg)

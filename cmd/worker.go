@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/formancehq/go-libs/v2/otlp"
@@ -63,6 +64,10 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 	topics, _ := cmd.Flags().GetStringSlice(flag.KafkaTopics)
 	listen, _ := cmd.Flags().GetString(flag.Listen)
 	retention := retentionConfigFromFlags(cmd)
+	pipeline, _ := cmd.Flags().GetString(flag.DeliveryPipeline)
+	if pipeline != "legacy" && pipeline != "deliveries" {
+		return fmt.Errorf("invalid --%s value %q: expected legacy or deliveries", flag.DeliveryPipeline, pipeline)
+	}
 
 	return service.New(
 		cmd.OutOrStdout(),
@@ -89,6 +94,7 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 			service.IsDebug(cmd),
 			topics,
 			retention,
+			pipeline == "deliveries",
 		),
 	).Run(cmd)
 }

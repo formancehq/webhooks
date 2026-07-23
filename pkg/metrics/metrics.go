@@ -18,9 +18,12 @@ import (
 const meterName = "webhooks"
 
 var (
-	once             sync.Once
-	deliveryCounter  metric.Int64Counter
-	deliveryDuration metric.Float64Histogram
+	once              sync.Once
+	deliveryCounter   metric.Int64Counter
+	deliveryDuration  metric.Float64Histogram
+	replayCounter     metric.Int64Counter
+	transitionCounter metric.Int64Counter
+	recoveredCounter  metric.Int64Counter
 )
 
 func instruments() (metric.Int64Counter, metric.Float64Histogram) {
@@ -35,8 +38,41 @@ func instruments() (metric.Int64Counter, metric.Float64Histogram) {
 			metric.WithDescription("Duration of the outbound webhook HTTP call"),
 			metric.WithUnit("s"),
 		)
+		replayCounter, _ = meter.Int64Counter(
+			"webhooks_replayed_deliveries_total",
+			metric.WithDescription("Total deliveries manually placed back in the queue"),
+		)
+		transitionCounter, _ = meter.Int64Counter(
+			"webhooks_delivery_transitions_total",
+			metric.WithDescription("Total durable delivery state transitions"),
+		)
+		recoveredCounter, _ = meter.Int64Counter(
+			"webhooks_delivery_claims_recovered_total",
+			metric.WithDescription("Total stale durable delivery claims recovered after worker interruption"),
+		)
 	})
 	return deliveryCounter, deliveryDuration
+}
+
+func RecordReplay(ctx context.Context, mode, action string, count int) {
+	instruments()
+	replayCounter.Add(ctx, int64(count), metric.WithAttributes(
+		attribute.String("mode", mode),
+		attribute.String("action", action),
+	))
+}
+
+func RecordDeliveryTransition(ctx context.Context, status, source string, count int) {
+	instruments()
+	transitionCounter.Add(ctx, int64(count), metric.WithAttributes(
+		attribute.String("status", status),
+		attribute.String("source", source),
+	))
+}
+
+func RecordRecoveredClaims(ctx context.Context, count int64) {
+	instruments()
+	recoveredCounter.Add(ctx, count)
 }
 
 // RecordDelivery records the outcome of a single delivery attempt.

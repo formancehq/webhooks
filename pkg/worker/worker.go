@@ -17,7 +17,7 @@ import (
 
 type Retrier struct {
 	httpClient *http.Client
-	store      storage.Store
+	store      retryStore
 
 	retriesCron    time.Duration
 	retryPolicy    webhooks.BackoffPolicy
@@ -27,7 +27,16 @@ type Retrier struct {
 	stopChan chan chan struct{}
 }
 
-func NewRetrier(store storage.Store, httpClient *http.Client, retriesCron time.Duration, retryPolicy webhooks.BackoffPolicy, retryBatchSize int) (*Retrier, error) {
+type retryStore interface {
+	FindAttemptsToRetryByWebhookID(ctx context.Context, webhookID string) ([]webhooks.Attempt, error)
+	FindFirstAttemptCreatedAtByWebhookID(ctx context.Context, webhookID string) (time.Time, error)
+	FindWebhookIDsToRetry(ctx context.Context, limit int) ([]string, error)
+	RecoverStaleRetryingAttempts(ctx context.Context, staleDuration time.Duration) error
+	UpdateAttemptsStatus(ctx context.Context, webhookID, status string) ([]webhooks.Attempt, error)
+	InsertOneAttemptAndUpdateAttemptsStatus(ctx context.Context, attempt webhooks.Attempt, webhookID, status string) error
+}
+
+func NewRetrier(store retryStore, httpClient *http.Client, retriesCron time.Duration, retryPolicy webhooks.BackoffPolicy, retryBatchSize int) (*Retrier, error) {
 	return &Retrier{
 		httpClient:     httpClient,
 		store:          store,

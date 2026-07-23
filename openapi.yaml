@@ -4,6 +4,8 @@ info:
   version: WEBHOOKS_VERSION
 servers:
   - url: http://localhost:8080/
+security:
+  - Authorization: []
 paths:
   x-speakeasy-errors:
     statusCodes:
@@ -288,6 +290,125 @@ paths:
       security:
         - Authorization:
             - webhooks:write
+  /deliveries:
+    get:
+      summary: List webhook deliveries
+      operationId: getDeliveries
+      tags: [webhooks.v1]
+      parameters:
+        - {name: configId, in: query, schema: {type: string, format: uuid}}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/DeliveryStatus'}}
+        - {name: createdAtFrom, in: query, schema: {type: string, format: date-time}}
+        - {name: createdAtTo, in: query, schema: {type: string, format: date-time}}
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 1000, default: 100}}
+      responses:
+        '200':
+          description: Paginated deliveries without payloads.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeliveriesResponse'}
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+      security:
+        - Authorization: [webhooks:read]
+  /deliveries/replay:
+    post:
+      summary: Replay a page of failed or pending deliveries
+      operationId: replayDeliveries
+      tags: [webhooks.v1]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, maxLength: 255}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReplayDeliveriesRequest'}
+      responses:
+        '200':
+          description: Deliveries synchronously placed back in the durable queue.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReplayDeliveriesResponse'}
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+      security:
+        - Authorization: [webhooks:write]
+  /deliveries/{id}:
+    get:
+      summary: Get a webhook delivery
+      operationId: getDelivery
+      tags: [webhooks.v1]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Delivery detail including its payload.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeliveryResponse'}
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+      security:
+        - Authorization: [webhooks:read]
+  /deliveries/{id}/attempts:
+    get:
+      summary: List attempts for a webhook delivery
+      operationId: getDeliveryAttempts
+      tags: [webhooks.v1]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 1000, default: 100}}
+      responses:
+        '200':
+          description: Paginated append-only attempt history.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeliveryAttemptsResponse'}
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+      security:
+        - Authorization: [webhooks:read]
+  /deliveries/{id}/replay:
+    post:
+      summary: Replay one failed or pending delivery
+      operationId: replayDelivery
+      tags: [webhooks.v1]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, maxLength: 255}
+      responses:
+        '200':
+          description: Delivery synchronously placed back in the durable queue.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeliveryResponse'}
+        default:
+          description: Error
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+      security:
+        - Authorization: [webhooks:write]
 components:
   securitySchemes:
     Authorization:
@@ -298,6 +419,112 @@ components:
           refreshUrl: '/oauth/token'
           scopes: {}
   schemas:
+    DeliveryStatus:
+      type: string
+      enum: [pending, delivering, succeeded, failed, cancelled]
+    Delivery:
+      type: object
+      required: [id, eventID, configID, eventType, status, attemptCount, replayGeneration, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        eventID: {type: string}
+        idempotencyKey: {type: string}
+        configID: {type: string, format: uuid}
+        eventType: {type: string}
+        payload: {type: string, description: Present only on delivery detail responses.}
+        status: {$ref: '#/components/schemas/DeliveryStatus'}
+        attemptCount: {type: integer}
+        replayGeneration: {type: integer}
+        cycleStartedAt: {type: string, format: date-time}
+        nextAttemptAt: {type: string, format: date-time}
+        claimedAt: {type: string, format: date-time}
+        lastAttemptAt: {type: string, format: date-time}
+        lastStatusCode: {type: integer}
+        lastError: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    DeliveryAttempt:
+      type: object
+      required: [id, deliveryID, attemptNumber, replayGeneration, endpoint, outcome, statusCode, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        deliveryID: {type: string, format: uuid}
+        attemptNumber: {type: integer}
+        replayGeneration: {type: integer}
+        endpoint: {type: string, format: uri}
+        outcome:
+          type: string
+          enum: [succeeded, retryable_failure, permanent_failure]
+        statusCode: {type: integer}
+        error: {type: string}
+        durationMillis: {type: integer, format: int64}
+        responseExcerpt: {type: string}
+        createdAt: {type: string, format: date-time}
+    DeliveryResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/Delivery'}
+    DeliveriesResponse:
+      type: object
+      required: [cursor]
+      properties:
+        cursor:
+          type: object
+          required: [hasMore, data]
+          properties:
+            pageSize: {type: integer}
+            hasMore: {type: boolean}
+            next: {type: string}
+            data:
+              type: array
+              items: {$ref: '#/components/schemas/Delivery'}
+    DeliveryAttemptsResponse:
+      type: object
+      required: [cursor]
+      properties:
+        cursor:
+          type: object
+          required: [hasMore, data]
+          properties:
+            pageSize: {type: integer}
+            hasMore: {type: boolean}
+            next: {type: string}
+            data:
+              type: array
+              items: {$ref: '#/components/schemas/DeliveryAttempt'}
+    ReplayDeliveriesRequest:
+      type: object
+      required: [createdAtFrom]
+      properties:
+        createdAtFrom: {type: string, format: date-time}
+        createdAtTo: {type: string, format: date-time}
+        statuses:
+          type: array
+          items:
+            type: string
+            enum: [failed, pending]
+          default: [failed, pending]
+        configIds:
+          type: array
+          items: {type: string, format: uuid}
+        cursor: {type: string}
+        pageSize: {type: integer, minimum: 1, maximum: 1000, default: 1000}
+    ReplayDeliveriesResult:
+      type: object
+      required: [replayed, expedited, skipped, hasMore, createdAtTo]
+      properties:
+        replayed: {type: integer}
+        expedited: {type: integer}
+        skipped: {type: integer}
+        hasMore: {type: boolean}
+        nextCursor: {type: string}
+        createdAtTo: {type: string, format: date-time}
+    ReplayDeliveriesResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {$ref: '#/components/schemas/ReplayDeliveriesResult'}
     ConfigUser:
       type: object
       required:
@@ -358,6 +585,7 @@ components:
         data:
           $ref: '#/components/schemas/WebhooksConfig'
     WebhooksConfig:
+      type: object
       properties:
         id:
           type: string
@@ -409,6 +637,7 @@ components:
         data:
           $ref: '#/components/schemas/Attempt'
     Attempt:
+      type: object
       properties:
         id:
           type: string
@@ -470,4 +699,5 @@ components:
         - INTERNAL
         - VALIDATION
         - NOT_FOUND
+        - CONFLICT
       example: VALIDATION

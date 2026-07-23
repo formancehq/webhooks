@@ -18,14 +18,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newTestStore(t *testing.T) storage.Store {
+type testStore struct {
+	storage.Store
+	db *bun.DB
+}
+
+func (s testStore) InsertDeliveries(ctx context.Context, deliveries []webhooks.Delivery) error {
+	if len(deliveries) == 0 {
+		return nil
+	}
+	_, err := s.db.NewInsert().Model(&deliveries).
+		On("CONFLICT (event_id, config_id) DO NOTHING").Exec(ctx)
+	return err
+}
+
+func newTestStore(t *testing.T) testStore {
 	t.Helper()
 
 	store, _ := newTestStoreWithDB(t)
 	return store
 }
 
-func newTestStoreWithDB(t *testing.T) (storage.Store, *bun.DB) {
+func newTestStoreWithDB(t *testing.T) (testStore, *bun.DB) {
 	t.Helper()
 
 	hooks := make([]bun.QueryHook, 0)
@@ -42,8 +56,9 @@ func newTestStoreWithDB(t *testing.T) (storage.Store, *bun.DB) {
 	require.NoError(t, db.Ping())
 	require.NoError(t, storage.Migrate(context.Background(), db))
 
-	store, err := postgres.NewStore(db)
+	productionStore, err := postgres.NewStore(db)
 	require.NoError(t, err)
+	store := testStore{Store: productionStore, db: db}
 	t.Cleanup(func() {
 		_ = store.Close(context.Background())
 	})

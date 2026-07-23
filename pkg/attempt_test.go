@@ -2,7 +2,9 @@ package webhooks_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,6 +16,17 @@ import (
 	webhooks "github.com/formancehq/webhooks/pkg"
 	"github.com/formancehq/webhooks/pkg/backoff"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+type failingResponseBody struct{}
+
+func (failingResponseBody) Read([]byte) (int, error) { return 0, errors.New("body read failed") }
+func (failingResponseBody) Close() error             { return nil }
 
 type fixedBackoff struct {
 	delay time.Duration
@@ -58,6 +71,27 @@ func TestMakeAttempt_TransportError_ReturnsRetryableAttempt(t *testing.T) {
 	assert.Equal(t, webhooks.StatusAttemptToRetry, attempt.Status)
 	assert.Equal(t, 0, attempt.StatusCode)
 	assert.False(t, attempt.NextRetryAfter.IsZero(), "NextRetryAfter should be set")
+}
+
+func TestMakeAttempt_ResponseBodyReadErrorConsumesRetryBudget(t *testing.T) {
+	client := &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(failingResponseBody{}),
+		}, nil
+	})}
+	cfg := webhooks.Config{ConfigUser: webhooks.ConfigUser{
+		Endpoint: "https://example.com", Secret: webhooks.NewSecret(), EventTypes: []string{"test.event"},
+	}, ID: "cfg-body-error", Active: true}
+
+	attempt, err := webhooks.MakeAttempt(context.Background(), client, &fixedBackoff{delay: time.Second},
+		"attempt-id", "webhook-id", 0, cfg, "", []byte(`{"type":"test.event"}`), false)
+	require.NoError(t, err)
+	require.Equal(t, webhooks.StatusAttemptToRetry, attempt.Status)
+	require.Equal(t, http.StatusInternalServerError, attempt.StatusCode)
+	require.Contains(t, attempt.DeliveryError, "body read failed")
+	require.False(t, attempt.NextRetryAfter.IsZero())
 }
 
 func TestMakeAttempt_TransportError_MaxRetriesExceeded(t *testing.T) {

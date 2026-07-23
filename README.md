@@ -46,12 +46,12 @@ Both are wired with `uber/fx` dependency injection, share a PostgreSQL database 
 
 ### 1.2 Data model
 
-Two tables only ([pkg/config.go](pkg/config.go), [pkg/attempt.go](pkg/attempt.go)):
+The legacy pipeline uses two tables ([pkg/config.go](pkg/config.go), [pkg/attempt.go](pkg/attempt.go)):
 
 **`configs`** — a webhook subscription:
 - `id` (UUID, PK), `endpoint` (URL), `event_types` (text array), `secret` (base64, 24 random bytes), `active` (bool), `name`, `created_at`, `updated_at`
 
-**`attempts`** — one row **per delivery attempt** (not per delivery):
+**`attempts`** — legacy rows used while `--delivery-pipeline=legacy` is active:
 - `id` (UUID, PK), `webhook_id` (groups all attempts of one event×config pair)
 - `config` (**JSONB snapshot of the full config at send time, including the secret**)
 - `payload` (full event JSON as text), `status_code`, `retry_attempt`, `status`, `next_retry_after`
@@ -60,9 +60,17 @@ Statuses: `success`, `to retry`, `retrying` (claimed by a worker), `failed` (ret
 
 Key design consequence: **the current state of a delivery is smeared across multiple rows**. Each retry inserts a *new* attempt row, and the previous `retrying` rows are bulk-updated to the new status (`UpdateAttemptsStatus`). There is no `deliveries` aggregate.
 
-### 1.3 Event consumption path (hot path)
+The durable pipeline (`--delivery-pipeline=deliveries`) replaces that model with:
 
-[pkg/worker/module.go](pkg/worker/module.go) — `processMessages`:
+- **`deliveries`** — one current-state row per event×config, deduplicated by `(event_id, config_id)`;
+- **`delivery_attempts`** — an append-only HTTP history linked to the delivery, with no config secret snapshot;
+- **`replay_requests`** — 24-hour idempotency records for individual and bulk replay commands.
+
+The consumer commits pending deliveries before acknowledging the broker. A dispatcher then claims due rows with `FOR UPDATE SKIP LOCKED`, sends them, and atomically records the attempt plus the next state.
+
+### 1.3 Legacy event consumption path
+
+[pkg/worker/module.go](pkg/worker/module.go) — `processMessages`, used only with `--delivery-pipeline=legacy`:
 
 1. Watermill delivers a message; payload is unmarshalled into `publish.EventMessage`.
 2. Event type is normalized to `<app>.<type>` lower-case.
@@ -83,7 +91,19 @@ Key design consequence: **the current state of a delivery is smeared across mult
 
 Backoff is exponential without jitter ([pkg/backoff/exponential.go](pkg/backoff/exponential.go)): `min-backoff-delay` (1m) doubling up to `max-backoff-delay` (1h), aborting to `failed` once cumulative elapsed time exceeds `--abort-after` (default 10h) or `--max-attempts` is reached (default 15 attempts). With nominal backoff, 15 attempts are exhausted after about 9h03; `abort-after` is the elapsed-time backstop for `Retry-After`, downtime, and backlog delays.
 
-### 1.5 Security model
+In durable mode, the same classification and backoff apply to the first attempt and retries through one dispatcher. Manual replay of `failed` work opens a fresh retry generation; replay of `pending` work only moves `next_attempt_at` to now.
+
+### 1.5 Delivery visibility and replay
+
+- `GET /deliveries` lists metadata with cursor pagination and omits payloads.
+- `GET /deliveries/{id}` returns one delivery including its payload.
+- `GET /deliveries/{id}/attempts` returns the append-only attempt history.
+- `POST /deliveries/{id}/replay` requeues one failed/pending delivery.
+- `POST /deliveries/replay` requeues up to 1,000 deliveries per call over a bounded creation window.
+
+Replay calls require `Idempotency-Key`; bulk continuation uses the returned opaque cursor. Delivery IDs and event idempotency keys remain stable across replay.
+
+### 1.6 Security model
 
 [pkg/security/security.go](pkg/security/security.go) — Svix-style signing:
 

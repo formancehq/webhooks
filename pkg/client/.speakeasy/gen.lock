@@ -1,15 +1,16 @@
 lockVersion: 2.0.0
 id: 32d27b3c-3111-406b-93c0-0ff757cb4a42
 management:
-  docChecksum: 0e2314059989cedcfe532c2779d6d0b0
+  docChecksum: deb59848ebba788b4be2035471cf417e
   docVersion: WEBHOOKS_VERSION
   speakeasyVersion: 1.351.0
   generationVersion: 2.384.1
-  releaseVersion: 0.2.1
-  configChecksum: 594ac984c6578789b2d8016b402879b3
+  releaseVersion: 0.3.4
+  configChecksum: 603594beeecac405f8c5b830b6e90ba2
 features:
   go:
     additionalDependencies: 0.1.0
+    constsAndDefaults: 0.1.4
     core: 3.5.2
     defaultEnabledRetries: 0.2.0
     envVarSecurityUsage: 0.2.1
@@ -52,6 +53,11 @@ generatedFiles:
   - /models/operations/activateconfig.go
   - /models/operations/deactivateconfig.go
   - /models/operations/changeconfigsecret.go
+  - /models/operations/getdeliveries.go
+  - /models/operations/replaydeliveries.go
+  - /models/operations/getdelivery.go
+  - /models/operations/getdeliveryattempts.go
+  - /models/operations/replaydelivery.go
   - /models/components/configsresponse.go
   - /models/components/webhooksconfig.go
   - /models/components/httpmetadata.go
@@ -61,6 +67,15 @@ generatedFiles:
   - /models/components/attemptresponse.go
   - /models/components/attempt.go
   - /models/components/configchangesecret.go
+  - /models/components/deliveriesresponse.go
+  - /models/components/delivery.go
+  - /models/components/deliverystatus.go
+  - /models/components/replaydeliveriesresponse.go
+  - /models/components/replaydeliveriesresult.go
+  - /models/components/replaydeliveriesrequest.go
+  - /models/components/deliveryresponse.go
+  - /models/components/deliveryattemptsresponse.go
+  - /models/components/deliveryattempt.go
   - /models/components/security.go
   - /models/sdkerrors/errorresponse.go
   - docs/models/operations/getmanyconfigsrequest.md
@@ -78,6 +93,16 @@ generatedFiles:
   - docs/models/operations/deactivateconfigresponse.md
   - docs/models/operations/changeconfigsecretrequest.md
   - docs/models/operations/changeconfigsecretresponse.md
+  - docs/models/operations/getdeliveriesrequest.md
+  - docs/models/operations/getdeliveriesresponse.md
+  - docs/models/operations/replaydeliveriesrequest.md
+  - docs/models/operations/replaydeliveriesresponse.md
+  - docs/models/operations/getdeliveryrequest.md
+  - docs/models/operations/getdeliveryresponse.md
+  - docs/models/operations/getdeliveryattemptsrequest.md
+  - docs/models/operations/getdeliveryattemptsresponse.md
+  - docs/models/operations/replaydeliveryrequest.md
+  - docs/models/operations/replaydeliveryresponse.md
   - docs/models/components/cursor.md
   - docs/models/components/configsresponse.md
   - docs/models/components/webhooksconfig.md
@@ -88,6 +113,19 @@ generatedFiles:
   - docs/models/components/attemptresponse.md
   - docs/models/components/attempt.md
   - docs/models/components/configchangesecret.md
+  - docs/models/components/deliveriesresponsecursor.md
+  - docs/models/components/deliveriesresponse.md
+  - docs/models/components/delivery.md
+  - docs/models/components/deliverystatus.md
+  - docs/models/components/replaydeliveriesresponse.md
+  - docs/models/components/replaydeliveriesresult.md
+  - docs/models/components/statuses.md
+  - docs/models/components/replaydeliveriesrequest.md
+  - docs/models/components/deliveryresponse.md
+  - docs/models/components/deliveryattemptsresponsecursor.md
+  - docs/models/components/deliveryattemptsresponse.md
+  - docs/models/components/outcome.md
+  - docs/models/components/deliveryattempt.md
   - docs/models/components/security.md
   - docs/models/sdkerrors/errorresponse.md
   - docs/sdks/formance/README.md
