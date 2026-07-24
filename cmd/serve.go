@@ -48,6 +48,10 @@ func serve(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	pipeline, err := deliveryPipelineFromFlags(cmd)
+	if err != nil {
+		return err
+	}
 
 	listen, _ := cmd.Flags().GetString(flag.Listen)
 	auditEnabled, _ := cmd.Flags().GetBool(flag.AuditEnabled)
@@ -76,7 +80,6 @@ func serve(cmd *cobra.Command, _ []string) error {
 		abortAfter, _ := cmd.Flags().GetDuration(flag.AbortAfter)
 		maxAttempts, _ := cmd.Flags().GetInt(flag.MaxAttempts)
 		topics, _ := cmd.Flags().GetStringSlice(flag.KafkaTopics)
-
 		options = append(options, worker.StartModule(
 			cmd,
 			retryPeriod,
@@ -90,6 +93,7 @@ func serve(cmd *cobra.Command, _ []string) error {
 			service.IsDebug(cmd),
 			topics,
 			retentionConfigFromFlags(cmd),
+			pipeline == "deliveries",
 		))
 	}
 

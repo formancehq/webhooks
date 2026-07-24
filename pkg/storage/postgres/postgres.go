@@ -26,7 +26,7 @@ func NewStore(db *bun.DB) (storage.Store, error) {
 
 func (s Store) FindManyConfigs(ctx context.Context, filters map[string]any) ([]webhooks.Config, error) {
 	res := []webhooks.Config{}
-	sq := s.db.NewSelect().Model(&res)
+	sq := s.db.NewSelect().Model(&res).Where("deleted_at IS NULL")
 	for key, val := range filters {
 		switch key {
 		case "id":
@@ -62,6 +62,7 @@ func (s Store) UpdateOneConfig(ctx context.Context, id string, cfgUser webhooks.
 	if _, err := s.db.NewUpdate().
 		Model(&webhooks.Config{}).
 		Where("id = ?", id).
+		Where("deleted_at IS NULL").
 		Set("endpoint = ?", cfgUser.Endpoint).
 		Set("secret = ?", cfgUser.Secret).
 		Set("event_types = ?", pgdialect.Array(cfgUser.EventTypes)).
@@ -73,27 +74,40 @@ func (s Store) UpdateOneConfig(ctx context.Context, id string, cfgUser webhooks.
 }
 
 func (s Store) DeleteOneConfig(ctx context.Context, id string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return errors.Wrap(err, "beginning config deletion")
+	}
+	defer func() { _ = tx.Rollback() }()
 	cfg := webhooks.Config{}
-	if err := s.db.NewSelect().Model(&cfg).
-		Where("id = ?", id).Scan(ctx); err != nil {
+	if err := tx.NewSelect().Model(&cfg).
+		Where("id = ?", id).Where("deleted_at IS NULL").For("UPDATE").Scan(ctx); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.ErrConfigNotFound
 		}
 		return errors.Wrap(err, "selecting one config before deleting")
 	}
-
-	if _, err := s.db.NewDelete().Model((*webhooks.Config)(nil)).
-		Where("id = ?", id).Exec(ctx); err != nil {
-		return errors.Wrap(err, "deleting one config")
+	now := time.Now().UTC()
+	if _, err := tx.NewUpdate().Model((*webhooks.Config)(nil)).
+		Where("id = ?", id).
+		Set("active = false, deleted_at = ?, updated_at = ?", now, now).Exec(ctx); err != nil {
+		return errors.Wrap(err, "soft deleting config")
 	}
-
-	return nil
+	if err := cancelPendingDeliveries(ctx, tx, id, now); err != nil {
+		return errors.Wrap(err, "cancelling deleted config deliveries")
+	}
+	return errors.Wrap(tx.Commit(), "committing config deletion")
 }
 
 func (s Store) UpdateOneConfigActivation(ctx context.Context, id string, active bool) (webhooks.Config, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return webhooks.Config{}, errors.Wrap(err, "beginning config activation transaction")
+	}
+	defer func() { _ = tx.Rollback() }()
 	cfg := webhooks.Config{}
-	if err := s.db.NewSelect().Model(&cfg).
-		Where("id = ?", id).Scan(ctx); err != nil {
+	if err := tx.NewSelect().Model(&cfg).
+		Where("id = ?", id).Where("deleted_at IS NULL").For("UPDATE").Scan(ctx); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return webhooks.Config{}, storage.ErrConfigNotFound
 		}
@@ -103,22 +117,42 @@ func (s Store) UpdateOneConfigActivation(ctx context.Context, id string, active 
 		return cfg, storage.ErrConfigNotModified
 	}
 
-	if _, err := s.db.NewUpdate().Model((*webhooks.Config)(nil)).
+	now := time.Now().UTC()
+	if _, err := tx.NewUpdate().Model((*webhooks.Config)(nil)).
 		Where("id = ?", id).
+		Where("deleted_at IS NULL").
 		Set("active = ?", active).
-		Set("updated_at = ?", time.Now().UTC()).
+		Set("updated_at = ?", now).
 		Exec(ctx); err != nil {
 		return webhooks.Config{}, errors.Wrap(err, "updating one config activation")
 	}
+	if !active {
+		if err := cancelPendingDeliveries(ctx, tx, id, now); err != nil {
+			return webhooks.Config{}, errors.Wrap(err, "cancelling deactivated config deliveries")
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return webhooks.Config{}, errors.Wrap(err, "committing config activation")
+	}
 
 	cfg.Active = active
+	cfg.UpdatedAt = now
 	return cfg, nil
+}
+
+func cancelPendingDeliveries(ctx context.Context, db bun.IDB, configID string, now time.Time) error {
+	_, err := db.NewUpdate().Model((*webhooks.Delivery)(nil)).
+		Where("config_id = ?", configID).
+		Where("status = ?", webhooks.StatusDeliveryPending).
+		Set("status = ?, next_attempt_at = NULL, updated_at = ?", webhooks.StatusDeliveryCancelled, now).
+		Exec(ctx)
+	return err
 }
 
 func (s Store) UpdateOneConfigSecret(ctx context.Context, id, secret string) (webhooks.Config, error) {
 	cfg := webhooks.Config{}
 	if err := s.db.NewSelect().Model(&cfg).
-		Where("id = ?", id).Scan(ctx); err != nil {
+		Where("id = ?", id).Where("deleted_at IS NULL").Scan(ctx); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return webhooks.Config{}, storage.ErrConfigNotFound
 		}
@@ -130,6 +164,7 @@ func (s Store) UpdateOneConfigSecret(ctx context.Context, id, secret string) (we
 
 	if _, err := s.db.NewUpdate().Model((*webhooks.Config)(nil)).
 		Where("id = ?", id).
+		Where("deleted_at IS NULL").
 		Set("secret = ?", secret).
 		Set("updated_at = ?", time.Now().UTC()).
 		Exec(ctx); err != nil {

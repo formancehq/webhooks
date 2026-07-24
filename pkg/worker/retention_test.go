@@ -1,11 +1,21 @@
 package worker
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+type deliveryOnlyRetentionStore struct {
+	deliveryCalls int
+}
+
+func (s *deliveryOnlyRetentionStore) PurgeFinishedDeliveries(context.Context, time.Duration, time.Duration, int) (int64, error) {
+	s.deliveryCalls++
+	return 0, nil
+}
 
 func TestRetentionConfigEnabled(t *testing.T) {
 	require.False(t, RetentionConfig{}.Enabled())
@@ -14,4 +24,11 @@ func TestRetentionConfigEnabled(t *testing.T) {
 		"the runner must start to reclaim deleted/inactive config attempts even when terminal purging is disabled")
 	require.True(t, RetentionConfig{SuccessDelay: time.Hour}.Enabled())
 	require.True(t, RetentionConfig{FailedDelay: time.Hour}.Enabled())
+}
+
+func TestDurableRetentionLeavesLegacyAttemptsReadOnly(t *testing.T) {
+	store := &deliveryOnlyRetentionStore{}
+	retention := NewDeliveryRetention(store, RetentionConfig{Period: time.Hour})
+	retention.runOnce(context.Background())
+	require.Equal(t, 1, store.deliveryCalls)
 }

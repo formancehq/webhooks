@@ -39,6 +39,16 @@ func isPermanentClientError(statusCode int) bool {
 	}
 }
 
+func terminalAttemptStatus(statusCode int) (string, bool) {
+	if statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices {
+		return StatusAttemptSuccess, true
+	}
+	if isPermanentClientError(statusCode) {
+		return StatusAttemptFailed, true
+	}
+	return "", false
+}
+
 // maxRetryAfterDelay clamps how far a Retry-After header can push the next
 // retry: the endpoint controls this value, so an absurd one must not park a
 // delivery years in the future.
@@ -76,16 +86,19 @@ const (
 type Attempt struct {
 	bun.BaseModel `bun:"table:attempts"`
 
-	ID             string    `json:"id" bun:",pk"`
-	WebhookID      string    `json:"webhookID" bun:"webhook_id"`
-	CreatedAt      time.Time `json:"createdAt" bun:"created_at,nullzero,notnull,default:current_timestamp"`
-	UpdatedAt      time.Time `json:"updatedAt" bun:"updated_at,nullzero,notnull,default:current_timestamp"`
-	Config         Config    `json:"config" bun:"type:jsonb"`
-	Payload        string    `json:"payload"`
-	StatusCode     int       `json:"statusCode" bun:"status_code"`
-	RetryAttempt   int       `json:"retryAttempt" bun:"retry_attempt"`
-	Status         string    `json:"status"`
-	NextRetryAfter time.Time `json:"nextRetryAfter,omitempty" bun:"next_retry_after,nullzero"`
+	ID              string        `json:"id" bun:",pk"`
+	WebhookID       string        `json:"webhookID" bun:"webhook_id"`
+	CreatedAt       time.Time     `json:"createdAt" bun:"created_at,nullzero,notnull,default:current_timestamp"`
+	UpdatedAt       time.Time     `json:"updatedAt" bun:"updated_at,nullzero,notnull,default:current_timestamp"`
+	Config          Config        `json:"config" bun:"type:jsonb"`
+	Payload         string        `json:"payload"`
+	StatusCode      int           `json:"statusCode" bun:"status_code"`
+	RetryAttempt    int           `json:"retryAttempt" bun:"retry_attempt"`
+	Status          string        `json:"status"`
+	NextRetryAfter  time.Time     `json:"nextRetryAfter,omitempty" bun:"next_retry_after,nullzero"`
+	ResponseExcerpt string        `json:"-" bun:"-"`
+	DeliveryError   string        `json:"-" bun:"-"`
+	Duration        time.Duration `json:"-" bun:"-"`
 }
 
 type attemptOptions struct {
@@ -151,8 +164,12 @@ func MakeAttempt(ctx context.Context, httpClient *http.Client, retryPolicy Backo
 	if err != nil {
 		return Attempt{}, err
 	}
+	attempt.Duration = time.Since(start)
+	if doErr != nil {
+		attempt.DeliveryError = doErr.Error()
+	}
 
-	metrics.RecordDelivery(ctx, attempt.Status, attempt.StatusCode, time.Since(start))
+	metrics.RecordDelivery(ctx, attempt.Status, attempt.StatusCode, attempt.Duration)
 	return attempt, nil
 }
 
@@ -166,19 +183,8 @@ func classifyResponse(ctx context.Context, resp *http.Response, doErr error, ret
 		// Transport/timeout failure — return a retryable attempt so the record is
 		// persisted and the retry loop picks it up instead of losing the event.
 		attempt.StatusCode = 0
-		delay, delayErr := retryPolicy.GetRetryDelay(attemptNb)
-		if delayErr != nil {
-			attempt.Status = StatusAttemptFailed
-			return attempt, nil
-		}
-		nextRetryAfter := now.Add(delay)
-		if err := limitRetryWindow(retryPolicy, firstAttemptAt, nextRetryAfter); err != nil {
-			attempt.Status = StatusAttemptFailed
-			return attempt, nil
-		}
-		attempt.Status = StatusAttemptToRetry
-		attempt.NextRetryAfter = nextRetryAfter
-		return attempt, nil
+		attempt.DeliveryError = doErr.Error()
+		return scheduleAttemptRetry(attempt, retryPolicy, attemptNb, now, firstAttemptAt, nil), nil
 	}
 
 	defer func() {
@@ -190,53 +196,83 @@ func classifyResponse(ctx context.Context, resp *http.Response, doErr error, ret
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
 	if err != nil {
-		return Attempt{}, errors.Wrap(err, "io.ReadAll")
+		attempt.StatusCode = resp.StatusCode
+		attempt.ResponseExcerpt = string(body)
+		attempt.DeliveryError = errors.Wrap(err, "io.ReadAll").Error()
+		if status, terminal := terminalAttemptStatus(resp.StatusCode); terminal {
+			attempt.Status = status
+			return attempt, nil
+		}
+		delay, delayErr := resolveRetryDelay(retryPolicy, attemptNb, now, resp.Header.Get("Retry-After"))
+		if delayErr != nil {
+			attempt.Status = StatusAttemptFailed
+			return attempt, nil
+		}
+		return scheduleAttemptRetry(attempt, retryPolicy, attemptNb, now, firstAttemptAt, &delay), nil
 	}
 	logging.FromContext(ctx).Debugf("webhooks.MakeAttempt: server response body: %s", string(body))
+	attempt.ResponseExcerpt = string(body)
 
 	attempt.StatusCode = resp.StatusCode
 
-	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
-		attempt.Status = StatusAttemptSuccess
-		return attempt, nil
-	}
-
-	// Permanent client errors will never succeed on retry — fail fast instead of
+	// Successful responses and permanent client errors are terminal. Permanent
+	// client errors will never succeed on retry, so fail them fast instead of
 	// retrying for the whole abort-after window.
-	if isPermanentClientError(resp.StatusCode) {
-		attempt.Status = StatusAttemptFailed
+	if status, terminal := terminalAttemptStatus(resp.StatusCode); terminal {
+		attempt.Status = status
 		return attempt, nil
 	}
 
-	delay, err := retryPolicy.GetRetryDelay(attemptNb)
+	delay, err := resolveRetryDelay(retryPolicy, attemptNb, now, resp.Header.Get("Retry-After"))
 	if err != nil {
 		attempt.Status = StatusAttemptFailed
 		return attempt, nil
+	}
+	return scheduleAttemptRetry(attempt, retryPolicy, attemptNb, now, firstAttemptAt, &delay), nil
+}
+
+func resolveRetryDelay(retryPolicy BackoffPolicy, attemptNb int, now time.Time, retryAfterHeader string) (time.Duration, error) {
+	delay, err := retryPolicy.GetRetryDelay(attemptNb)
+	if err != nil {
+		return 0, err
 	}
 
 	// Respect an explicit Retry-After (429/503) when it asks us to wait longer
 	// than our computed backoff, but never let endpoint-controlled delays bypass
 	// the retry policy window.
-	if retryAfter, ok := parseRetryAfter(resp.Header.Get("Retry-After"), now); ok && retryAfter > delay {
+	if retryAfter, ok := parseRetryAfter(retryAfterHeader, now); ok && retryAfter > delay {
 		if limiter, ok := retryPolicy.(RetryDelayLimiter); ok {
 			var limitErr error
 			retryAfter, limitErr = limiter.LimitRetryDelay(attemptNb, retryAfter)
 			if limitErr != nil {
-				attempt.Status = StatusAttemptFailed
-				return attempt, nil
+				return 0, limitErr
 			}
 		}
 		delay = retryAfter
 	}
+	return delay, nil
+}
 
+func scheduleAttemptRetry(attempt Attempt, retryPolicy BackoffPolicy, attemptNb int, now, firstAttemptAt time.Time, requestedDelay *time.Duration) Attempt {
+	delay := time.Duration(0)
+	if requestedDelay == nil {
+		var err error
+		delay, err = retryPolicy.GetRetryDelay(attemptNb)
+		if err != nil {
+			attempt.Status = StatusAttemptFailed
+			return attempt
+		}
+	} else {
+		delay = *requestedDelay
+	}
 	nextRetryAfter := now.Add(delay)
 	if err := limitRetryWindow(retryPolicy, firstAttemptAt, nextRetryAfter); err != nil {
 		attempt.Status = StatusAttemptFailed
-		return attempt, nil
+		return attempt
 	}
 	attempt.Status = StatusAttemptToRetry
 	attempt.NextRetryAfter = nextRetryAfter
-	return attempt, nil
+	return attempt
 }
 
 func limitRetryWindow(retryPolicy BackoffPolicy, firstAttemptAt, nextRetryAfter time.Time) error {

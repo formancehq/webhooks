@@ -9,10 +9,13 @@ import (
 )
 
 var (
-	ErrConfigNotFound      = errors.New("config not found")
-	ErrConfigNotModified   = errors.New("config not modified")
-	ErrWebhookIDNotFound   = errors.New("webhook ID not found")
-	ErrAttemptsNotModified = errors.New("attempt not modified")
+	ErrConfigNotFound        = errors.New("config not found")
+	ErrConfigNotModified     = errors.New("config not modified")
+	ErrWebhookIDNotFound     = errors.New("webhook ID not found")
+	ErrAttemptsNotModified   = errors.New("attempt not modified")
+	ErrDeliveryNotFound      = errors.New("delivery not found")
+	ErrDeliveryNotReplayable = errors.New("delivery cannot be replayed")
+	ErrIdempotencyConflict   = errors.New("idempotency key already used with another request")
 )
 
 type Store interface {
@@ -44,4 +47,19 @@ type Store interface {
 	// for retry ('to retry'). Used as the retry-queue-depth gauge — the leading
 	// indicator of a retry storm.
 	CountAttemptsToRetry(ctx context.Context) (int64, error)
+
+	EnqueueEvent(ctx context.Context, eventID, idempotencyKey, eventType, payload string, createdAt time.Time) error
+	ClaimDeliveries(ctx context.Context, limit int) ([]webhooks.Delivery, error)
+	CompleteDelivery(ctx context.Context, delivery webhooks.Delivery, attempt webhooks.DeliveryAttempt) (string, error)
+	FailClaimedDelivery(ctx context.Context, id string, claimedAt time.Time, reason string) error
+	CancelDelivery(ctx context.Context, id string) error
+	RecoverStaleDeliveries(ctx context.Context, staleDuration time.Duration) (int64, error)
+	CountPendingDeliveries(ctx context.Context) (int64, error)
+	FindDeliveries(ctx context.Context, filter webhooks.DeliveryFilter) (webhooks.DeliveryPage, error)
+	GetDelivery(ctx context.Context, id string) (webhooks.Delivery, error)
+	FindDeliveryAttempts(ctx context.Context, deliveryID string, after *webhooks.DeliveryCursor, pageSize int) ([]webhooks.DeliveryAttempt, *webhooks.DeliveryCursor, error)
+	ReplayDelivery(ctx context.Context, id, idempotencyKey string) (webhooks.Delivery, bool, error)
+	ReplayDeliveries(ctx context.Context, request webhooks.ReplayDeliveriesRequest, idempotencyKey string) (webhooks.ReplayDeliveriesResult, bool, error)
+	PurgeFinishedDeliveries(ctx context.Context, successOlderThan, failedOlderThan time.Duration, batchSize int) (int64, error)
+	BackfillDeliveries(ctx context.Context, successSince, failedSince time.Duration, batchSize int) (int64, error)
 }

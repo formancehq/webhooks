@@ -4,6 +4,18 @@
 
 The retry mechanism processes failed webhook delivery attempts. A background worker (the `Retrier`) polls the database at regular intervals, claims a batch of pending retries, executes the HTTP calls, and updates their status.
 
+That description is retained for `--delivery-pipeline=legacy`. With `--delivery-pipeline=deliveries`, first attempts and retries share the durable dispatcher described below.
+
+## Durable dispatcher
+
+1. The broker consumer inserts `pending` deliveries with `UNIQUE(event_id, config_id)` and acknowledges after commit.
+2. Workers atomically claim due rows as `delivering` with `FOR UPDATE SKIP LOCKED`.
+3. The outbound HTTP result and the delivery transition are committed together with an append-only `delivery_attempts` row.
+4. Retryable results return to `pending`; terminal results become `succeeded` or `failed`.
+5. A `delivering` lease older than five minutes is recovered to `pending`; stable delivery and idempotency IDs let receivers deduplicate the possible at-least-once resend.
+
+Manual replay preserves delivery identity. A failed delivery increments `replay_generation` and receives a new 15-attempt/10-hour budget. A pending delivery is only expedited and cannot use replay to bypass its existing cap.
+
 ## Architecture
 
 ### Statuses

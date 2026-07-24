@@ -15,6 +15,7 @@ const (
 	ErrValidation       = "VALIDATION"
 	ErrContextCancelled = "CONTEXT_CANCELLED"
 	ErrNotFound         = "NOT_FOUND"
+	ErrConflict         = "CONFLICT"
 )
 
 func ResponseError(w http.ResponseWriter, r *http.Request, err error) {
@@ -39,12 +40,29 @@ func coreErrorToErrorCode(err error) (int, string) {
 		return http.StatusBadRequest, ErrValidation
 	case IsNotFoundError(err):
 		return http.StatusNotFound, ErrNotFound
+	case IsConflictError(err):
+		return http.StatusConflict, ErrConflict
 	case errors.Is(err, context.Canceled):
 		return http.StatusInternalServerError, ErrContextCancelled
 	default:
 		return http.StatusInternalServerError, ErrInternal
 	}
 }
+
+type ConflictError struct {
+	Msg string
+}
+
+func (v ConflictError) Error() string { return v.Msg }
+
+func (v ConflictError) Is(err error) bool {
+	_, ok := err.(*ConflictError)
+	return ok
+}
+
+func NewConflictError(msg string) *ConflictError { return &ConflictError{Msg: msg} }
+
+func IsConflictError(err error) bool { return errors.Is(err, &ConflictError{}) }
 
 type ValidationError struct {
 	Msg string

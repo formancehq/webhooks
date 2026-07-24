@@ -77,6 +77,11 @@ func main() {
 * [ActivateConfig](docs/sdks/v1/README.md#activateconfig) - Activate one config
 * [DeactivateConfig](docs/sdks/v1/README.md#deactivateconfig) - Deactivate one config
 * [ChangeConfigSecret](docs/sdks/v1/README.md#changeconfigsecret) - Change the signing secret of a config
+* [GetDeliveries](docs/sdks/v1/README.md#getdeliveries) - List webhook deliveries
+* [ReplayDeliveries](docs/sdks/v1/README.md#replaydeliveries) - Replay a page of failed or pending deliveries
+* [GetDelivery](docs/sdks/v1/README.md#getdelivery) - Get a webhook delivery
+* [GetDeliveryAttempts](docs/sdks/v1/README.md#getdeliveryattempts) - List attempts for a webhook delivery
+* [ReplayDelivery](docs/sdks/v1/README.md#replaydelivery) - Replay one failed or pending delivery
 <!-- End Available Resources and Operations [operations] -->
 
 <!-- Start Retries [retries] -->

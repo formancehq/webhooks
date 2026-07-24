@@ -20,7 +20,8 @@ The webhooks service delivers event notifications to user-configured HTTP endpoi
 ┌─────────────────┐      │                  │
 │   API Clients   │─────▶│    PostgreSQL    │
 │                 │◀─────│    (configs +    │
-└─────────────────┘      │     attempts)   │
+└─────────────────┘      │ deliveries +    │
+                         │     attempts)   │
          ▲               └──────────────────┘
          │
 ┌────────┴─────────┐
@@ -43,6 +44,11 @@ The server exposes a REST API (see `openapi.yaml`) with these endpoints:
 | PUT | `/configs/{id}/deactivate` | Deactivate a config |
 | PUT | `/configs/{id}/secret/change` | Rotate the signing secret |
 | GET | `/configs/{id}/test` | Send a test webhook |
+| GET | `/deliveries` | List durable deliveries |
+| GET | `/deliveries/{id}` | Inspect a delivery and payload |
+| GET | `/deliveries/{id}/attempts` | Inspect delivery attempts |
+| POST | `/deliveries/{id}/replay` | Replay one delivery |
+| POST | `/deliveries/replay` | Replay a bounded page of deliveries |
 | GET | `/_healthcheck` | Health check |
 | GET | `/_info` | Service version info |
 
@@ -52,9 +58,11 @@ Authentication is handled via OAuth2 client credentials (configurable via `--aut
 
 The worker has two responsibilities:
 
-1. **Event consumption** — Subscribes to configured Kafka/NATS topics via [Watermill](https://watermill.io/). For each event, it finds matching active configs by event type and delivers the webhook synchronously. Messages are only acknowledged after processing completes — no data loss on crash.
+1. **Event consumption** — In durable mode, subscribes through Watermill, inserts one pending delivery per matching config, and acknowledges only after the transaction commits. Endpoint latency never blocks broker ingestion.
 
-2. **Retry loop** — A background `Retrier` polls the database for failed attempts due for retry. Uses an atomic claim pattern for safe multi-worker scaling. See [retry-mechanism.md](retry-mechanism.md) for full details.
+2. **Dispatcher** — Claims pending first attempts and retries with an atomic `FOR UPDATE SKIP LOCKED` query, performs bounded concurrent HTTP calls, and records each result atomically with the delivery transition. See [retry-mechanism.md](retry-mechanism.md).
+
+`--delivery-pipeline=legacy` remains the default for the coordinated migration release. Run `webhooks backfill-deliveries`, stop legacy workers for the final active-queue pass, then restart server and workers with `--delivery-pipeline=deliveries`.
 
 ### Data Model
 
@@ -75,6 +83,13 @@ The worker has two responsibilities:
 - `status` — one of: `success`, `to retry`, `retrying`, `failed`
 - `retry_attempt` (int) — attempt number (0 = first delivery)
 - `next_retry_after` (timestamp) — when this attempt can be retried
+
+**Delivery** — Durable current state for one event/config pair:
+- stable delivery and event IDs, config ID, event type and raw payload
+- `pending|delivering|succeeded|failed|cancelled`
+- retry-generation counters, lease timestamps and the next-attempt timestamp
+
+**DeliveryAttempt** — Append-only result of one outbound call. It stores endpoint, outcome, status code, sanitized transport error, optional duration and a bounded response excerpt, never the signing secret. Backfilled attempts leave duration/error absent when legacy data cannot reconstruct them.
 
 ## Webhook Delivery
 
