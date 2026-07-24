@@ -1,12 +1,12 @@
 lockVersion: 2.0.0
 id: 32d27b3c-3111-406b-93c0-0ff757cb4a42
 management:
-  docChecksum: deb59848ebba788b4be2035471cf417e
+  docChecksum: fbd5b7c3eb2d482d3974a74b8cde2c48
   docVersion: WEBHOOKS_VERSION
   speakeasyVersion: 1.351.0
   generationVersion: 2.384.1
-  releaseVersion: 0.3.4
-  configChecksum: 603594beeecac405f8c5b830b6e90ba2
+  releaseVersion: 0.3.5
+  configChecksum: 61de82bcb19502a493b6c7b5cfee047d
 features:
   go:
     additionalDependencies: 0.1.0
