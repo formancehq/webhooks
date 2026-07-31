@@ -54,7 +54,12 @@ func newServerHandler(
 	}
 
 	if auditEnabled {
-		h.Use(httpaudit.Middleware(publisher, "audit-events", "webhooks", nil))
+		// go-libs/v5 gates publication on its own enabled option, which
+		// defaults to false. The middleware is only installed when audit is
+		// requested, so opt it in explicitly here.
+		h.Use(httpaudit.Middleware(publisher, "audit-events", "webhooks", nil,
+			httpaudit.WithEnabled(true),
+		))
 	}
 	h.Use(func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
