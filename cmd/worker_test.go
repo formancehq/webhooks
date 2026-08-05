@@ -3,17 +3,20 @@ package cmd
 import (
 	"testing"
 
+	"github.com/formancehq/go-libs/v2/logging"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 )
 
-func TestWorkerHTTPServerModuleProvidesHandlerDependencies(t *testing.T) {
+func TestWorkerServiceOptionsProvideAllDependencies(t *testing.T) {
 	cmd := newWorkerCommand()
+	require.NoError(t, cmd.Flags().Set("postgres-uri", "postgresql://localhost/webhooks"))
+	options, err := workerServiceOptions(cmd)
+	require.NoError(t, err)
 
-	app := fx.New(
-		workerHTTPServerModule(cmd, "127.0.0.1:0"),
-		fx.NopLogger,
+	options = append(options,
+		fx.Supply(fx.Annotate(logging.Testing(), fx.As(new(logging.Logger)))),
 	)
 
-	require.NoError(t, app.Err())
+	require.NoError(t, fx.ValidateApp(options...))
 }
