@@ -2,58 +2,49 @@
 
 ## Overview
 
-The worker consumes events from a message broker (Kafka or NATS) via [Watermill](https://watermill.io/) and delivers webhooks to matching configured endpoints.
-
-## Processing Model
-
-Messages are processed **synchronously** within the Watermill handler. The handler only returns after all webhook deliveries for that message are complete. This ensures:
-
-- **No data loss** — The message is acknowledged by the broker only after processing finishes. If the worker crashes mid-processing, the broker redelivers the message.
-- **Backpressure** — If delivery is slow, the consumer naturally slows down. No unbounded queue builds up in memory.
-- **Error propagation** — If the message cannot be parsed, the handler returns an error, allowing Watermill to nack/retry/dead-letter as configured.
-
-### Why not a worker pool?
-
-A previous implementation dispatched messages to a `pond` worker pool and returned `nil` immediately. This created a data loss window: the message was acknowledged before processing finished. If the worker crashed between ack and completion, messages were silently lost.
-
-The current design relies on Watermill's built-in concurrency model. Watermill's router supports concurrent message handling natively — configure it via `RouterConfig.Handler.MaxConcurrentMessages` if higher throughput is needed.
+The worker consumes events from Kafka or NATS through Watermill and durably enqueues webhook deliveries before acknowledging each broker message.
 
 ## Flow
 
-```
-Broker (Kafka/NATS)
-       │
-       ▼
-  Watermill Router
-       │
-       ▼
-  processMessages handler (synchronous)
-       │
-       ├─ Unmarshal event
-       ├─ Normalize event type (lowercase, app prefix)
-       ├─ Query matching active configs
-       ├─ For each config:
-       │    ├─ MakeAttempt (HTTP POST with signature)
-       │    ├─ Insert attempt record
-       │    └─ Log result
-       └─ Return nil (ack) or error (nack)
+```text
+Broker
+  │
+  ▼
+Watermill handler
+  ├─ unmarshal the event
+  ├─ normalize the event type
+  ├─ find matching active configs
+  ├─ INSERT pending deliveries in one transaction
+  └─ return after commit
+        │
+        ├─ success → broker ACK
+        └─ error   → broker NACK
 ```
 
-## Event Format
+The handler never performs outbound HTTP. Endpoint latency therefore does not block broker ingestion.
 
-Events are expected as `publish.EventMessage` JSON objects with at minimum:
-- `type` — The event type (matched against config `event_types`)
-- `app` — Optional app prefix (combined as `app.type`)
+`deliveries` has a unique `(event_id, config_id)` index. If the broker redelivers a message after an uncertain acknowledgement, `ON CONFLICT DO NOTHING` makes the enqueue operation idempotent.
 
-The full event payload is forwarded as the webhook body.
+## Event format
 
-## Error Handling
+Events are decoded as `publish.EventMessage`:
 
-| Error | Behavior |
-|-------|----------|
-| Unmarshal failure | Return error → broker nack/retry |
-| No matching configs | Return nil → message acknowledged (no work needed) |
-| HTTP call failure on one config | Log error, continue to next config |
-| Database insert failure | Log error, continue to next config |
+- `type` is the event type matched against config filters;
+- `app`, when present, is prepended to the type;
+- `idempotency_key` is propagated to outbound webhook headers.
 
-Individual config failures do not block other configs from receiving the same event. Only message-level errors (bad payload, config query failure) cause a nack.
+The normalized type is lowercase and formatted as `<app>.<type>` when `app` is present.
+
+## Transaction and acknowledgement contract
+
+All matching deliveries are inserted in a single PostgreSQL transaction. The consumer returns success only after that transaction commits.
+
+| Failure | Result |
+|---------|--------|
+| Invalid broker payload | NACK |
+| Config lookup failure | NACK |
+| Delivery insert or commit failure | NACK |
+| No matching active config | ACK with no delivery |
+| Existing `(event_id, config_id)` | ACK after idempotent no-op |
+
+Once persisted, first attempts and retries are both handled by the dispatcher described in [retry-mechanism.md](retry-mechanism.md).

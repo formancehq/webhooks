@@ -1,207 +1,82 @@
 # Retry Mechanism
 
-## Overview
+## Dispatcher
 
-The retry mechanism processes failed webhook delivery attempts. A background worker (the `Retrier`) polls the database at regular intervals, claims a batch of pending retries, executes the HTTP calls, and updates their status.
+First attempts and retries use the same durable dispatcher:
 
-That description is retained for `--delivery-pipeline=legacy`. With `--delivery-pipeline=deliveries`, first attempts and retries share the durable dispatcher described below.
+1. Claim due `pending` deliveries and atomically move them to `delivering` with `FOR UPDATE SKIP LOCKED`.
+2. Execute outbound HTTP calls with bounded concurrency and a 30-second client timeout.
+3. Atomically append a `delivery_attempts` row and transition the delivery.
+4. Return retryable results to `pending` with `next_attempt_at`.
+5. Move terminal results to `succeeded` or `failed`.
 
-## Durable dispatcher
+Multiple workers can dispatch concurrently because locked rows are skipped rather than shared.
 
-1. The broker consumer inserts `pending` deliveries with `UNIQUE(event_id, config_id)` and acknowledges after commit.
-2. Workers atomically claim due rows as `delivering` with `FOR UPDATE SKIP LOCKED`.
-3. The outbound HTTP result and the delivery transition are committed together with an append-only `delivery_attempts` row.
-4. Retryable results return to `pending`; terminal results become `succeeded` or `failed`.
-5. A `delivering` lease older than five minutes is recovered to `pending`; stable delivery and idempotency IDs let receivers deduplicate the possible at-least-once resend.
+## States
 
-Manual replay preserves delivery identity. A failed delivery increments `replay_generation` and receives a new 15-attempt/10-hour budget. A pending delivery is only expedited and cannot use replay to bypass its existing cap.
+| State | Meaning |
+|-------|---------|
+| `pending` | Ready for a first attempt or a retry at `next_attempt_at`. |
+| `delivering` | Claimed by one dispatcher. |
+| `succeeded` | The endpoint returned a successful response. |
+| `failed` | The response is terminal or the retry budget is exhausted. |
+| `cancelled` | The associated config was deleted or deactivated. |
 
-## Architecture
-
-### Statuses
-
-| Status | Description |
-|--------|-------------|
-| `success` | Webhook delivered successfully (HTTP 2xx) |
-| `to retry` | Delivery failed, scheduled for retry with a `next_retry_after` timestamp |
-| `retrying` | Claimed by a worker, currently being processed |
-| `failed` | Max retry duration exceeded, permanently failed |
-
-### Lifecycle
-
-```
-[new message] --> MakeAttempt --> HTTP call
-                                    |
-                            success? --> "success"
-                            failure? --> "to retry" + next_retry_after
-                                              |
-                                    [retrier tick] --> claim ("retrying")
-                                              |
-                                        HTTP call (30s timeout)
-                                              |
-                                    success? --> "success"
-                                    failure? --> "to retry" (retry again later)
-                                    max delay? --> "failed"
+```text
+pending ── claim ──▶ delivering ── success ──▶ succeeded
+   ▲                     │
+   │                     ├─ retryable failure
+   └─────────────────────┘
+                         └─ terminal/budget exhausted ──▶ failed
 ```
 
-## Worker Behavior
+## Retry classification
 
-### Tick Loop
+- Network errors and timeouts are retryable.
+- `408`, `429`, and `5xx` responses are retryable.
+- Other `4xx` responses are permanent failures.
+- `Retry-After` is preserved when present.
 
-The `Retrier` runs in a single goroutine with the following loop:
+Backoff is exponential and bounded by both `--max-attempts` and `--abort-after`. The limits are checked before each outbound call, including after downtime or a delayed `Retry-After`.
 
-1. **Recover stale claims** (once per minute) -- Reset attempts stuck in `retrying` for more than 5 minutes (from crashed workers) back to `to retry`. This runs at most once per minute to avoid unnecessary database load.
-2. **Claim a batch** -- Atomically set up to `--retry-batch-size` (default: 50) distinct webhook IDs from `to retry` to `retrying` using a single CTE query. Oldest retries are claimed first (`ORDER BY next_retry_after ASC`). Rows already locked by another worker are skipped with `FOR UPDATE SKIP LOCKED` so workers do not block each other.
-3. **Process batch in parallel** -- All claimed webhook IDs are processed concurrently via a bounded worker pool (`pond`), capped at `--retry-batch-size` concurrent goroutines. For each webhook:
-   - Fetch the `retrying` attempts
-   - Unmarshal the payload from the most recent attempt
-   - Execute the HTTP call (`MakeAttempt`) with a 30-second timeout
-   - Insert a new attempt record with the result
-   - Terminalize the claimed (`retrying`) attempts; if the new result is retryable, only the newly inserted attempt remains in `to retry`
-   - The worker waits for all goroutines to complete before sleeping
-4. **Sleep** -- Wait `--retry-period` (default: 3 seconds), then repeat.
+## Crash recovery
 
-### Error Handling
+A worker crash can leave a delivery in `delivering`. Every dispatcher periodically returns claims older than five minutes to `pending`. The recovery window is longer than the outbound HTTP timeout so active requests are not reclaimed during normal operation.
 
-Per-webhook errors are **logged and skipped**, not fatal. A single failing webhook endpoint does not stop the worker from processing the rest of the batch. Only context cancellation stops the worker.
+Delivery identity and the event idempotency key remain stable across retries. Receivers should use them to deduplicate the possible at-least-once resend after an uncertain HTTP outcome.
 
-Errors that are handled gracefully:
-- HTTP call failures (timeout, DNS, connection refused)
-- Malformed payloads
-- Database errors on individual attempts
+## Replay
 
-### Claim Query
+Manual replay preserves delivery identity:
 
-The claim is atomic and safe for concurrent workers:
+- replaying a failed delivery increments `replay_generation` and grants a fresh retry budget;
+- replaying a pending delivery only moves `next_attempt_at` forward;
+- succeeded, delivering, cancelled, or inactive-config deliveries are not replayable by default.
 
-```sql
-WITH to_claim AS (
-    SELECT attempts.webhook_id
-    FROM attempts
-    JOIN configs c ON c.id = attempts.config->>'id'
-    WHERE attempts.status = 'to retry'
-      AND attempts.next_retry_after < NOW()
-      AND c.active = true
-      AND NOT EXISTS (
-          SELECT 1
-          FROM attempts older
-          JOIN configs older_c ON older_c.id = older.config->>'id'
-          WHERE older.webhook_id = attempts.webhook_id
-            AND older.status = 'to retry'
-            AND older.next_retry_after < NOW()
-            AND older_c.active = true
-            AND (older.next_retry_after, older.id) < (attempts.next_retry_after, attempts.id)
-      )
-    ORDER BY attempts.next_retry_after ASC, attempts.id ASC
-    FOR UPDATE OF attempts SKIP LOCKED
-    LIMIT $batch_size
-),
-attempts_to_claim AS (
-    SELECT attempts.id
-    FROM attempts
-    JOIN configs c ON c.id = attempts.config->>'id'
-    WHERE attempts.webhook_id IN (SELECT webhook_id FROM to_claim)
-      AND c.active = true
-      AND attempts.status = 'to retry'
-      AND attempts.next_retry_after < NOW()
-    FOR UPDATE OF attempts SKIP LOCKED
-),
-claimed AS (
-    UPDATE attempts
-    SET status = 'retrying', updated_at = NOW()
-    FROM attempts_to_claim
-    WHERE attempts.id = attempts_to_claim.id
-    RETURNING attempts.webhook_id
-)
-SELECT DISTINCT webhook_id FROM claimed
-```
-
-When two workers execute this concurrently:
-- Worker A locks the candidate attempt rows and sets them to `retrying`.
-- Worker B skips rows already locked by Worker A and claims other available rows.
-- No duplicate processing occurs.
-
-Oldest retries are prioritized per webhook with the `NOT EXISTS` check, then globally across candidate webhooks via `ORDER BY next_retry_after ASC, id ASC`.
-
-### Status Scoping
-
-`UpdateAttemptsStatus` only modifies attempts in `retrying` status. Historical attempts (`success`, `failed`) are never overwritten. When a retry still needs another retry, the claimed rows are marked `failed` and the newly inserted attempt carries the next `to retry` state. This ensures:
-- Accurate audit trail per attempt
-- No accidental overwrites from concurrent Kafka messages creating new attempts for the same webhook
-
-## Multi-Worker Scaling
-
-| Workers | Estimated Throughput |
-|---------|---------------------|
-| 1 | ~1,000 webhooks/min |
-| 2 | ~2,000 webhooks/min |
-| 4 | ~4,000 webhooks/min |
-| N | ~N x 1,000 webhooks/min |
-
-Throughput scales linearly because each worker claims its own exclusive batch.
-
-### Crash Recovery
-
-If a worker crashes mid-processing, its claimed attempts remain in `retrying` status. Every worker runs a recovery step at the start of each tick:
-
-```sql
-UPDATE attempts
-SET status = 'to retry', updated_at = NOW()
-WHERE status = 'retrying'
-  AND updated_at < NOW() - INTERVAL '5 minutes'
-```
-
-This ensures no attempt is permanently stuck. The 5-minute window is chosen to be well above the 30-second HTTP timeout, avoiding false recoveries on slow-but-active requests.
+Replay commands are idempotent through `Idempotency-Key`.
 
 ## Configuration
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--retry-period` | `3s` | Interval between retry ticks |
-| `--retry-batch-size` | `50` | Number of distinct webhook IDs claimed per tick |
-| `--min-backoff-delay` | `1m` | Minimum delay before retrying a failed attempt |
-| `--max-backoff-delay` | `1h` | Maximum delay between retries (exponential backoff) |
-| `--abort-after` | `10h` | Stop retrying after this duration and mark as `failed` |
-| `--max-attempts` | `15` | Stop retrying after this many delivery attempts; with nominal backoff this is about 9h03 |
+| `--retry-period` | `3s` | Dispatcher polling interval. |
+| `--retry-batch-size` | `50` | Maximum deliveries claimed per tick. |
+| `--min-backoff-delay` | `1m` | Initial retry delay. |
+| `--max-backoff-delay` | `1h` | Maximum retry delay. |
+| `--abort-after` | `10h` | Maximum elapsed time per retry generation. |
+| `--max-attempts` | `15` | Maximum HTTP attempts per retry generation. |
 
-## Database Indexes
-
-Partial indexes optimize the retry queries:
+## PostgreSQL indexes
 
 ```sql
--- Speeds up ordered retry claims without blocking on unrelated statuses
-CREATE INDEX CONCURRENTLY idx_attempts_retry_pending_due
-ON attempts (next_retry_after, id, webhook_id)
-WHERE status = 'to retry';
+CREATE UNIQUE INDEX idx_deliveries_event_config
+    ON deliveries (event_id, config_id);
 
--- Speeds up per-webhook oldest-attempt checks and claim expansion
-CREATE INDEX CONCURRENTLY idx_attempts_retry_pending_webhook_due
-ON attempts (webhook_id, next_retry_after, id)
-WHERE status = 'to retry';
+CREATE INDEX idx_deliveries_pending_due
+    ON deliveries (next_attempt_at, id)
+    WHERE status = 'pending';
 
--- Speeds up fetching claimed attempts by webhook ID
-CREATE INDEX idx_attempts_retrying
-ON attempts (webhook_id)
-WHERE status = 'retrying';
-
--- Speeds up the stale recovery query
-CREATE INDEX idx_attempts_retrying_recovery
-ON attempts (updated_at)
-WHERE status = 'retrying';
-
--- Speeds up fetching the first attempt timestamp for retry-window checks
-CREATE INDEX CONCURRENTLY idx_attempts_first_attempt_lookup
-ON attempts (webhook_id, created_at);
+CREATE INDEX idx_deliveries_delivering_recovery
+    ON deliveries (claimed_at, id)
+    WHERE status = 'delivering';
 ```
-
-## HTTP Client
-
-The HTTP client used for webhook delivery has a **30-second timeout** (`pkg/otlp/module.go`). This prevents a single slow endpoint from blocking the worker indefinitely and ensures the stale recovery window (5 minutes) is never reached during normal operation.
-
-## Backoff Strategy
-
-Uses exponential backoff without jitter (see `pkg/backoff/exponential.go`):
-
-- Each retry attempt increases the delay exponentially, starting from `--min-backoff-delay`.
-- The delay is capped at `--max-backoff-delay`.
-- After `--abort-after` total elapsed time since the first attempt, the webhook is marked as `failed` permanently.

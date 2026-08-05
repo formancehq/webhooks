@@ -60,7 +60,7 @@ var _ = Context("Retries", func() {
 			)
 			Expect(err).To(BeNil())
 		})
-		It("with an exponential backoff, 3 attempts have to be made and all should have a failed status", func() {
+		It("persists retries and eventually marks the deliveries as failed", func() {
 			_, err := srv.GetValue().Client().Webhooks.V1.InsertConfig(
 				ctx,
 				components.ConfigUser{
@@ -81,15 +81,15 @@ var _ = Context("Retries", func() {
 				Publish("foo", []byte(`{"type":"foo"}`))
 			Expect(err).To(BeNil())
 
-			Eventually(getNumAttemptsToRetry).WithArguments(db).
+			Eventually(getNumDeliveriesToRetry).WithArguments(db).
 				WithTimeout(5 * time.Second).
 				Should(BeNumerically(">", 0))
 
-			Eventually(getNumFailedAttempts).WithArguments(db).
+			Eventually(getNumDeliveryAttempts).WithArguments(db).
 				WithTimeout(12 * time.Second).
 				Should(BeNumerically(">=", 3))
 
-			Eventually(getNumPendingRetryAttemptsForEndpoint).WithArguments(db, httpServer.URL).
+			Eventually(getNumPendingDeliveriesForEndpoint).WithArguments(db, httpServer.URL).
 				WithTimeout(10 * time.Second).
 				Should(Equal(0))
 		})
@@ -136,17 +136,17 @@ var _ = Context("Retries", func() {
 				Publish("foo", []byte(`{"type":"foo"}`))
 			Expect(err).To(BeNil())
 
-			Eventually(getNumEndpointAttemptsByStatus).WithArguments(db, httpServer.URL, webhooks.StatusAttemptToRetry).
+			Eventually(getNumEndpointAttemptsByOutcome).WithArguments(db, httpServer.URL, webhooks.OutcomeDeliveryRetryableFailure).
 				WithTimeout(5 * time.Second).
 				Should(BeNumerically(">", 0))
 
 			recovered.Store(true)
 
-			Eventually(getNumEndpointAttemptsByStatus).WithArguments(db, httpServer.URL, webhooks.StatusAttemptSuccess).
+			Eventually(getNumEndpointAttemptsByOutcome).WithArguments(db, httpServer.URL, webhooks.OutcomeDeliverySucceeded).
 				WithTimeout(10 * time.Second).
 				Should(BeNumerically(">", 0))
 
-			Eventually(getNumPendingRetryAttemptsForEndpoint).WithArguments(db, httpServer.URL).
+			Eventually(getNumPendingDeliveriesForEndpoint).WithArguments(db, httpServer.URL).
 				WithTimeout(5 * time.Second).
 				Should(Equal(0))
 
@@ -186,55 +186,44 @@ var _ = Context("Retries", func() {
 				Publish("foo", []byte(`{"type":"foo"}`))
 			Expect(err).To(BeNil())
 
-			Eventually(getNumEndpointAttemptsByStatus).WithArguments(db, httpServer.URL, webhooks.StatusAttemptFailed).
+			Eventually(getNumEndpointAttemptsByOutcome).WithArguments(db, httpServer.URL, webhooks.OutcomeDeliveryPermanentFailure).
 				WithTimeout(5 * time.Second).
 				Should(BeNumerically(">=", 1))
 
 			// A permanent 4xx must never enter the retry queue
-			Consistently(getNumPendingRetryAttemptsForEndpoint).WithArguments(db, httpServer.URL).
+			Consistently(getNumPendingDeliveriesForEndpoint).WithArguments(db, httpServer.URL).
 				WithTimeout(3 * time.Second).
 				Should(Equal(0))
 		})
 	})
 })
 
-func getNumAttemptsToRetry(db *bun.DB) (int, error) {
-	var results []webhooks.Attempt
-	err := db.NewSelect().Model(&results).
-		Where("status = ?", "to retry").
-		Scan(logging.TestingContext())
-	if err != nil {
-		return 0, err
-	}
-	return len(results), nil
+func getNumDeliveriesToRetry(db *bun.DB) (int, error) {
+	return db.NewSelect().Model((*webhooks.Delivery)(nil)).
+		Where("status = ?", webhooks.StatusDeliveryPending).
+		Where("attempt_count > 0").
+		Count(logging.TestingContext())
 }
 
-func getNumFailedAttempts(db *bun.DB) (int, error) {
-	var results []webhooks.Attempt
-	err := db.NewSelect().Model(&results).
-		Where("status = ?", "failed").
-		Scan(logging.TestingContext())
-	if err != nil {
-		return 0, err
-	}
-
-	return len(results), nil
+func getNumDeliveryAttempts(db *bun.DB) (int, error) {
+	return db.NewSelect().Model((*webhooks.DeliveryAttempt)(nil)).Count(logging.TestingContext())
 }
 
-func getNumEndpointAttemptsByStatus(db *bun.DB, endpoint, status string) (int, error) {
-	count, err := db.NewSelect().Model((*webhooks.Attempt)(nil)).
-		Where("config->>'endpoint' = ?", endpoint).
-		Where("status = ?", status).
+func getNumEndpointAttemptsByOutcome(db *bun.DB, endpoint, outcome string) (int, error) {
+	count, err := db.NewSelect().Model((*webhooks.DeliveryAttempt)(nil)).
+		Where("endpoint = ?", endpoint).
+		Where("outcome = ?", outcome).
 		Count(logging.TestingContext())
 	return count, err
 }
 
-func getNumPendingRetryAttemptsForEndpoint(db *bun.DB, endpoint string) (int, error) {
-	count, err := db.NewSelect().Model((*webhooks.Attempt)(nil)).
-		Where("config->>'endpoint' = ?", endpoint).
-		Where("status IN (?)", bun.List([]string{
-			webhooks.StatusAttemptToRetry,
-			webhooks.StatusAttemptRetrying,
+func getNumPendingDeliveriesForEndpoint(db *bun.DB, endpoint string) (int, error) {
+	count, err := db.NewSelect().Model((*webhooks.Delivery)(nil)).
+		Join("JOIN configs AS config ON config.id = delivery.config_id").
+		Where("config.endpoint = ?", endpoint).
+		Where("delivery.status IN (?)", bun.List([]string{
+			webhooks.StatusDeliveryPending,
+			webhooks.StatusDeliveryDelivering,
 		})).
 		Count(logging.TestingContext())
 	return count, err

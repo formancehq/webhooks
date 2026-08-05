@@ -13,7 +13,7 @@ import (
 func newBackfillDeliveriesCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "backfill-deliveries",
-		Short: "Backfill the durable deliveries model from legacy attempts",
+		Short: "Backfill deliveries from the pre-deliveries attempts table",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			options, err := bunconnect.ConnectionOptionsFromFlags(cmd)
 			if err != nil {
@@ -51,7 +51,7 @@ func newBackfillDeliveriesCommand() *cobra.Command {
 		},
 	}
 	bunconnect.AddFlags(command.Flags())
-	command.Flags().Int("batch-size", 1000, "number of legacy webhook IDs to migrate per transaction batch")
+	command.Flags().Int("batch-size", 1000, "number of pre-deliveries webhook IDs to migrate per transaction batch")
 	command.Flags().Duration("success-since", 30*24*time.Hour, "retained successful delivery history to migrate")
 	command.Flags().Duration("failed-since", 90*24*time.Hour, "retained failed delivery history to migrate")
 	return command

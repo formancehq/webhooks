@@ -45,7 +45,6 @@ func newServerHandler(
 	publisher message.Publisher,
 	debug bool,
 	auditEnabled bool,
-	deliveriesEnabled bool,
 ) http.Handler {
 	h := &serverHandler{
 		Mux:        chi.NewRouter(),
@@ -87,13 +86,11 @@ func newServerHandler(
 		r.Put(PathConfigs+PathId+PathActivate, h.activateOneConfigHandle)
 		r.Put(PathConfigs+PathId+PathDeactivate, h.deactivateOneConfigHandle)
 		r.Put(PathConfigs+PathId+PathChangeSecret, h.changeSecretHandle)
-		if deliveriesEnabled {
-			r.Get(PathDeliveries, h.getDeliveriesHandle)
-			r.Post(PathDeliveries+PathReplay, h.replayDeliveriesHandle)
-			r.Get(PathDeliveries+PathId, h.getDeliveryHandle)
-			r.Get(PathDeliveries+PathId+PathAttempts, h.getDeliveryAttemptsHandle)
-			r.Post(PathDeliveries+PathId+PathReplay, h.replayDeliveryHandle)
-		}
+		r.Get(PathDeliveries, h.getDeliveriesHandle)
+		r.Post(PathDeliveries+PathReplay, h.replayDeliveriesHandle)
+		r.Get(PathDeliveries+PathId, h.getDeliveryHandle)
+		r.Get(PathDeliveries+PathId+PathAttempts, h.getDeliveryAttemptsHandle)
+		r.Post(PathDeliveries+PathId+PathReplay, h.replayDeliveryHandle)
 	})
 
 	return h

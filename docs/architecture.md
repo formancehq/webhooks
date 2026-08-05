@@ -2,140 +2,92 @@
 
 ## Overview
 
-The webhooks service delivers event notifications to user-configured HTTP endpoints. It consists of two main components that can run independently or together:
+Webhooks has two commands backed by one PostgreSQL delivery model:
 
-- **Server** — REST API for managing webhook configurations (CRUD, activation, secret management)
-- **Worker** — Background service that consumes events from a message broker (Kafka/NATS) and delivers webhooks, with automatic retry on failure
+- `serve` exposes the authenticated configuration, delivery, and replay endpoints;
+- `worker` consumes broker events and dispatches persisted deliveries.
 
-## Components
-
-```
-┌─────────────────┐      ┌──────────────────┐      ┌──────────────────┐
-│  Kafka / NATS   │─────▶│     Worker       │─────▶│  User Endpoints  │
-│  (event source) │      │  (consumer +     │      │  (webhook targets)│
-└─────────────────┘      │   retrier)       │      └──────────────────┘
-                         └────────┬─────────┘
-                                  │
-                         ┌────────▼─────────┐
-┌─────────────────┐      │                  │
-│   API Clients   │─────▶│    PostgreSQL    │
-│                 │◀─────│    (configs +    │
-└─────────────────┘      │ deliveries +    │
-                         │     attempts)   │
-         ▲               └──────────────────┘
-         │
-┌────────┴─────────┐
-│     Server       │
-│  (REST API)      │
-└──────────────────┘
+```text
+Kafka / NATS ──▶ Consumer ──▶ PostgreSQL ──▶ Dispatcher ──▶ User endpoints
+                                    ▲
+                                    │
+API clients ───────▶ Server ────────┘
 ```
 
-### Server
+`serve --worker` embeds both roles in one process. A dedicated worker exposes only its health endpoint.
 
-The server exposes a REST API (see `openapi.yaml`) with these endpoints:
+## Server
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/configs` | List webhook configs (filterable by id, endpoint) |
-| POST | `/configs` | Create a new webhook config |
-| PUT | `/configs/{id}` | Update a webhook config |
-| DELETE | `/configs/{id}` | Delete a webhook config |
-| PUT | `/configs/{id}/activate` | Activate a config |
-| PUT | `/configs/{id}/deactivate` | Deactivate a config |
-| PUT | `/configs/{id}/secret/change` | Rotate the signing secret |
-| GET | `/configs/{id}/test` | Send a test webhook |
-| GET | `/deliveries` | List durable deliveries |
-| GET | `/deliveries/{id}` | Inspect a delivery and payload |
-| GET | `/deliveries/{id}/attempts` | Inspect delivery attempts |
-| POST | `/deliveries/{id}/replay` | Replay one delivery |
-| POST | `/deliveries/replay` | Replay a bounded page of deliveries |
-| GET | `/_healthcheck` | Health check |
-| GET | `/_info` | Service version info |
+| GET | `/configs` | List webhook configs. |
+| POST | `/configs` | Create a config. |
+| PUT | `/configs/{id}` | Update a config. |
+| DELETE | `/configs/{id}` | Soft-delete a config and cancel pending deliveries. |
+| PUT | `/configs/{id}/activate` | Activate a config. |
+| PUT | `/configs/{id}/deactivate` | Deactivate a config and cancel pending deliveries. |
+| PUT | `/configs/{id}/secret/change` | Rotate the signing secret. |
+| GET | `/configs/{id}/test` | Send a test webhook. |
+| GET | `/deliveries` | List deliveries. |
+| GET | `/deliveries/{id}` | Inspect one delivery and its payload. |
+| GET | `/deliveries/{id}/attempts` | Inspect its attempt history. |
+| POST | `/deliveries/{id}/replay` | Replay one delivery. |
+| POST | `/deliveries/replay` | Replay a bounded page. |
+| GET | `/_healthcheck` | Health check. |
+| GET | `/_info` | Version information. |
 
-Authentication is handled via OAuth2 client credentials (configurable via `--auth-*` flags).
+OAuth2 client credentials protect the application endpoints. Audit middleware can publish API calls to `audit-events`.
 
-### Worker
+## Worker
 
 The worker has two responsibilities:
 
-1. **Event consumption** — In durable mode, subscribes through Watermill, inserts one pending delivery per matching config, and acknowledges only after the transaction commits. Endpoint latency never blocks broker ingestion.
+1. **Event ingestion** — normalize each broker event, insert one `pending` delivery per matching config in a transaction, and acknowledge only after commit.
+2. **Dispatch** — claim due rows with `FOR UPDATE SKIP LOCKED`, perform bounded concurrent HTTP calls, and atomically persist the attempt and next delivery state.
 
-2. **Dispatcher** — Claims pending first attempts and retries with an atomic `FOR UPDATE SKIP LOCKED` query, performs bounded concurrent HTTP calls, and records each result atomically with the delivery transition. See [retry-mechanism.md](retry-mechanism.md).
+The consumer never performs outbound HTTP. Slow endpoints therefore affect dispatcher capacity without blocking broker persistence.
 
-`--delivery-pipeline=legacy` remains the default for the coordinated migration release. Run `webhooks backfill-deliveries`, stop legacy workers for the final active-queue pass, then restart server and workers with `--delivery-pipeline=deliveries`.
+## Data model
 
-### Data Model
+**Config** represents a webhook subscription: endpoint, event filters, signing secret, activation state, and timestamps. Deletion is soft so retained deliveries keep referential integrity.
 
-**Config** — A webhook subscription:
-- `id` (UUID) — unique identifier
-- `endpoint` (URL) — where webhooks are sent
-- `event_types` (string array) — which event types trigger this webhook
-- `secret` (base64) — HMAC-SHA256 signing key (24 random bytes, base64-encoded)
-- `active` (boolean) — whether the config receives webhooks
-- `name` (string, optional) — human-readable label
+**Delivery** is the current state of one event/config pair:
 
-**Attempt** — A single webhook delivery attempt:
-- `id` (UUID) — unique identifier
-- `webhook_id` (UUID) — groups all attempts for one event/config pair
-- `config` (JSONB) — snapshot of the config at delivery time
-- `payload` (string) — the event payload sent
-- `status_code` (int) — HTTP response status
-- `status` — one of: `success`, `to retry`, `retrying`, `failed`
-- `retry_attempt` (int) — attempt number (0 = first delivery)
-- `next_retry_after` (timestamp) — when this attempt can be retried
+- stable delivery and event IDs;
+- unique `(event_id, config_id)` identity;
+- event type and payload;
+- `pending`, `delivering`, `succeeded`, `failed`, or `cancelled` state;
+- attempt counters, replay generation, lease timestamps, and next-attempt time.
 
-**Delivery** — Durable current state for one event/config pair:
-- stable delivery and event IDs, config ID, event type and raw payload
-- `pending|delivering|succeeded|failed|cancelled`
-- retry-generation counters, lease timestamps and the next-attempt timestamp
+**DeliveryAttempt** is the append-only result of an outbound call. It stores endpoint, outcome, status code, sanitized transport error, duration, and a bounded response excerpt. It never stores the signing secret.
 
-**DeliveryAttempt** — Append-only result of one outbound call. It stores endpoint, outcome, status code, sanitized transport error, optional duration and a bounded response excerpt, never the signing secret. Backfilled attempts leave duration/error absent when legacy data cannot reconstruct them.
+**ReplayRequestRecord** retains individual and bulk replay idempotency decisions for 24 hours.
 
-## Webhook Delivery
+## Upgrade adapter
 
-### Request Format
+`backfill-deliveries` exists only for upgrades from releases that queued retries in `attempts`. The Operator must stop all old workers before running it, then deploy and start the new workers only after it succeeds. The runtime has no selector and cannot start the old worker implementation.
 
-Each webhook is an HTTP POST with these headers:
+The backfill is resumable, idempotent, retention-bounded for terminal history, and always imports outstanding retries. Backfilled attempt rows may omit duration or transport error when the source data cannot reconstruct them.
+
+## Webhook request
+
+Every outbound delivery is an HTTP POST with:
 
 | Header | Description |
 |--------|-------------|
 | `content-type` | `application/json` |
 | `user-agent` | `formance-webhooks/v0` |
-| `formance-webhook-id` | Unique webhook ID |
-| `formance-webhook-timestamp` | Unix timestamp of the delivery |
-| `formance-webhook-signature` | HMAC-SHA256 signature (`v1,<base64>`) |
-| `formance-webhook-test` | `true` if this is a test webhook |
-| `formance-webhook-idempotency-key` | Idempotency key (if present in the event) |
+| `formance-webhook-id` | Stable delivery ID. |
+| `formance-webhook-timestamp` | Unix delivery timestamp. |
+| `formance-webhook-signature` | `v1,<base64>` HMAC-SHA256 signature. |
+| `formance-webhook-test` | Whether this is a test delivery. |
+| `formance-webhook-idempotency-key` | Event idempotency key when present. |
 
-### Signature Verification
+The signed value is `{webhook_id}.{timestamp}.{body}`. Receivers should compare the computed signature in constant time and use the stable IDs to deduplicate possible at-least-once sends.
 
-Signatures use HMAC-SHA256. The signed payload is:
+## Response handling
 
-```
-{webhook_id}.{timestamp}.{body}
-```
-
-The signature header format is `v1,<base64-encoded-hmac>`. Recipients should:
-1. Extract the timestamp and signature from the headers
-2. Reconstruct the signed payload: `{formance-webhook-id}.{formance-webhook-timestamp}.{raw-body}`
-3. Compute HMAC-SHA256 with the shared secret
-4. Compare signatures using constant-time comparison
-
-### Response Handling
-
-- **2xx** → `success`, no retry
-- **Non-2xx** → `to retry`, scheduled with exponential backoff
-- **Max duration exceeded** → `failed`, no more retries
-
-## Technology Stack
-
-| Component | Technology |
-|-----------|-----------|
-| Language | Go 1.25+ |
-| HTTP framework | [chi](https://github.com/go-chi/chi) |
-| Database | PostgreSQL via [bun](https://bun.uptrace.dev/) ORM |
-| Message broker | Kafka or NATS via [Watermill](https://watermill.io/) |
-| Dependency injection | [uber/fx](https://github.com/uber-go/fx) |
-| CLI | [cobra](https://github.com/spf13/cobra) |
-| Observability | OpenTelemetry (traces) |
-| SDK | Auto-generated Go client via [Speakeasy](https://speakeasyapi.dev/) |
+- `2xx` succeeds;
+- network errors, timeouts, `408`, `429`, and `5xx` schedule a bounded retry;
+- other `4xx` responses fail permanently;
+- retry budget exhaustion marks the delivery failed.

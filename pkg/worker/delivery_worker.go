@@ -19,7 +19,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const defaultDeliveryHTTPTimeout = 30 * time.Second
+const (
+	defaultDeliveryHTTPTimeout = 30 * time.Second
+	staleRecoveryInterval      = time.Minute
+	staleDeliveryClaimAge      = 5 * time.Minute
+)
 
 type DeliveryDispatcher struct {
 	store       deliveryDispatchStore
@@ -76,7 +80,7 @@ func (d *DeliveryDispatcher) Run(ctx context.Context) {
 			d.pool.StopAndWait()
 			return
 		case <-recoveryTicker.C:
-			if recovered, err := d.store.RecoverStaleDeliveries(ctx, staleRetryingAttemptAge); err != nil {
+			if recovered, err := d.store.RecoverStaleDeliveries(ctx, staleDeliveryClaimAge); err != nil {
 				logging.FromContext(ctx).Errorf("recovering stale deliveries: %s", err)
 			} else if recovered > 0 {
 				metrics.RecordRecoveredClaims(ctx, recovered)
@@ -85,6 +89,16 @@ func (d *DeliveryDispatcher) Run(ctx context.Context) {
 			d.dispatch(ctx)
 		}
 	}
+}
+
+func limitRetryWindowBeforeAttempt(retryPolicy webhooks.BackoffPolicy, firstAttemptAt time.Time) error {
+	if firstAttemptAt.IsZero() {
+		return nil
+	}
+	if limiter, ok := retryPolicy.(webhooks.RetryWindowLimiter); ok {
+		return limiter.LimitRetryWindow(time.Since(firstAttemptAt))
+	}
+	return nil
 }
 
 func (d *DeliveryDispatcher) dispatch(ctx context.Context) {
