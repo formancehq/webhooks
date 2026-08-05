@@ -49,9 +49,18 @@ func newWorkerCommand() *cobra.Command {
 }
 
 func runWorker(cmd *cobra.Command, _ []string) error {
-	connectionOptions, err := bunconnect.ConnectionOptionsFromFlags(cmd)
+	options, err := workerServiceOptions(cmd)
 	if err != nil {
 		return err
+	}
+
+	return service.New(cmd.OutOrStdout(), options...).Run(cmd)
+}
+
+func workerServiceOptions(cmd *cobra.Command) ([]fx.Option, error) {
+	connectionOptions, err := bunconnect.ConnectionOptionsFromFlags(cmd)
+	if err != nil {
+		return nil, err
 	}
 
 	retryPeriod, _ := cmd.Flags().GetDuration(flag.RetryPeriod)
@@ -64,10 +73,10 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 	listen, _ := cmd.Flags().GetString(flag.Listen)
 	retention := retentionConfigFromFlags(cmd)
 
-	return service.New(
-		cmd.OutOrStdout(),
+	return []fx.Option{
 		innerotlp.HttpClientModule(),
 		licence.FXModuleFromFlags(cmd, ServiceName),
+		publish.FXModuleFromFlags(cmd, service.IsDebug(cmd)),
 		postgres.NewModule(*connectionOptions, service.IsDebug(cmd)),
 		workerHTTPServerModule(cmd, listen),
 		otlp.FXModuleFromFlags(cmd),
@@ -86,7 +95,7 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 			topics,
 			retention,
 		),
-	).Run(cmd)
+	}, nil
 }
 
 func workerHTTPServerModule(cmd *cobra.Command, listen string) fx.Option {
