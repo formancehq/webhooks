@@ -69,10 +69,7 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 		innerotlp.HttpClientModule(),
 		licence.FXModuleFromFlags(cmd, ServiceName),
 		postgres.NewModule(*connectionOptions, service.IsDebug(cmd)),
-		fx.Provide(worker.NewWorkerHandler),
-		fx.Invoke(func(lc fx.Lifecycle, h http.Handler) {
-			lc.Append(httpserver.NewHook(h, httpserver.WithAddress(listen)))
-		}),
+		workerHTTPServerModule(cmd, listen),
 		otlp.FXModuleFromFlags(cmd),
 		otlptraces.FXModuleFromFlags(cmd),
 		otlpmetrics.FXModuleFromFlags(cmd),
@@ -90,6 +87,19 @@ func runWorker(cmd *cobra.Command, _ []string) error {
 			retention,
 		),
 	).Run(cmd)
+}
+
+func workerHTTPServerModule(cmd *cobra.Command, listen string) fx.Option {
+	debug := service.IsDebug(cmd)
+
+	return fx.Options(
+		fx.Provide(func() http.Handler {
+			return worker.NewWorkerHandler(debug)
+		}),
+		fx.Invoke(func(lc fx.Lifecycle, h http.Handler) {
+			lc.Append(httpserver.NewHook(h, httpserver.WithAddress(listen)))
+		}),
+	)
 }
 
 func retentionConfigFromFlags(cmd *cobra.Command) worker.RetentionConfig {
