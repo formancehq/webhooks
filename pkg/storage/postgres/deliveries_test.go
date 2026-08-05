@@ -273,18 +273,19 @@ func TestSoftDeleteHidesConfigAndCancelsPendingDeliveries(t *testing.T) {
 	require.ErrorIs(t, err, storage.ErrDeliveryNotReplayable)
 }
 
-func TestBackfillDeliveriesPreservesLegacyWebhookIdentity(t *testing.T) {
-	store := newTestStore(t)
+func TestBackfillDeliveriesPreservesPreviousWebhookIdentity(t *testing.T) {
+	store, db := newTestStoreWithDB(t)
 	ctx := context.Background()
 	config := insertDeliveryConfig(t, store)
 	webhookID := uuid.NewString()
 	payload, err := json.Marshal(publish.EventMessage{Type: "test.event", IdempotencyKey: "event-key"})
 	require.NoError(t, err)
 	created := time.Now().UTC().Add(-time.Hour)
-	require.NoError(t, store.InsertOneAttempt(ctx, webhooks.Attempt{
+	_, err = db.NewInsert().Model(&webhooks.Attempt{
 		ID: uuid.NewString(), WebhookID: webhookID, Config: config, Payload: string(payload),
 		StatusCode: 404, Status: webhooks.StatusAttemptFailed, CreatedAt: created, UpdatedAt: created,
-	}))
+	}).Exec(ctx)
+	require.NoError(t, err)
 
 	migrated, err := store.BackfillDeliveries(ctx, 30*24*time.Hour, 90*24*time.Hour, 100)
 	require.NoError(t, err)
@@ -301,17 +302,18 @@ func TestBackfillDeliveriesPreservesLegacyWebhookIdentity(t *testing.T) {
 	require.Zero(t, migrated, "backfill must be resumable and idempotent")
 }
 
-func TestFinalBackfillReconcilesLegacyRetryCompletedAfterInitialPass(t *testing.T) {
-	store := newTestStore(t)
+func TestFinalBackfillReconcilesRetryCompletedAfterInitialPass(t *testing.T) {
+	store, db := newTestStoreWithDB(t)
 	ctx := context.Background()
 	config := insertDeliveryConfig(t, store)
 	webhookID := uuid.NewString()
 	created := time.Now().UTC().Add(-time.Hour)
-	require.NoError(t, store.InsertOneAttempt(ctx, webhooks.Attempt{
+	_, err := db.NewInsert().Model(&webhooks.Attempt{
 		ID: uuid.NewString(), WebhookID: webhookID, Config: config, Payload: `{"type":"test.event"}`,
 		StatusCode: 500, Status: webhooks.StatusAttemptRetrying, CreatedAt: created, UpdatedAt: created,
 		NextRetryAfter: created.Add(time.Minute),
-	}))
+	}).Exec(ctx)
+	require.NoError(t, err)
 
 	migrated, err := store.BackfillDeliveries(ctx, 30*24*time.Hour, 90*24*time.Hour, 100)
 	require.NoError(t, err)
@@ -320,7 +322,10 @@ func TestFinalBackfillReconcilesLegacyRetryCompletedAfterInitialPass(t *testing.
 	require.NoError(t, err)
 	require.Equal(t, webhooks.StatusDeliveryPending, initial.Status)
 
-	_, err = store.UpdateAttemptsStatus(ctx, webhookID, webhooks.StatusAttemptSuccess)
+	_, err = db.NewUpdate().Model((*webhooks.Attempt)(nil)).
+		Where("webhook_id = ?", webhookID).
+		Set("status = ?, updated_at = ?", webhooks.StatusAttemptSuccess, time.Now().UTC()).
+		Exec(ctx)
 	require.NoError(t, err)
 	migrated, err = store.BackfillDeliveries(ctx, 30*24*time.Hour, 90*24*time.Hour, 100)
 	require.NoError(t, err)
@@ -331,18 +336,19 @@ func TestFinalBackfillReconcilesLegacyRetryCompletedAfterInitialPass(t *testing.
 	require.Nil(t, final.NextAttemptAt)
 }
 
-func TestBackfillCancelsLegacyRetryForInactiveConfig(t *testing.T) {
-	store := newTestStore(t)
+func TestBackfillCancelsRetryForInactiveConfig(t *testing.T) {
+	store, db := newTestStoreWithDB(t)
 	ctx := context.Background()
 	config := insertDeliveryConfig(t, store)
 	webhookID := uuid.NewString()
 	created := time.Now().UTC().Add(-time.Hour)
-	require.NoError(t, store.InsertOneAttempt(ctx, webhooks.Attempt{
+	_, err := db.NewInsert().Model(&webhooks.Attempt{
 		ID: uuid.NewString(), WebhookID: webhookID, Config: config, Payload: `{"type":"test.event"}`,
 		StatusCode: 500, Status: webhooks.StatusAttemptToRetry, CreatedAt: created, UpdatedAt: created,
 		NextRetryAfter: created.Add(time.Minute),
-	}))
-	_, err := store.UpdateOneConfigActivation(ctx, config.ID, false)
+	}).Exec(ctx)
+	require.NoError(t, err)
+	_, err = store.UpdateOneConfigActivation(ctx, config.ID, false)
 	require.NoError(t, err)
 
 	migrated, err := store.BackfillDeliveries(ctx, 30*24*time.Hour, 90*24*time.Hour, 100)
@@ -354,17 +360,18 @@ func TestBackfillCancelsLegacyRetryForInactiveConfig(t *testing.T) {
 	require.Nil(t, delivery.NextAttemptAt)
 }
 
-func TestBackfillCreatesNonReplayableTombstoneWithoutLegacySecret(t *testing.T) {
+func TestBackfillCreatesNonReplayableTombstoneWithoutPreviousSecret(t *testing.T) {
 	store, db := newTestStoreWithDB(t)
 	ctx := context.Background()
 	config := insertDeliveryConfig(t, store)
-	legacySecret := config.Secret
+	previousSecret := config.Secret
 	webhookID := uuid.NewString()
-	require.NoError(t, store.InsertOneAttempt(ctx, webhooks.Attempt{
+	_, err := db.NewInsert().Model(&webhooks.Attempt{
 		ID: uuid.NewString(), WebhookID: webhookID, Config: config, Payload: `{"type":"test.event"}`,
 		StatusCode: 500, Status: webhooks.StatusAttemptToRetry, NextRetryAfter: time.Now().UTC().Add(time.Minute),
-	}))
-	_, err := db.NewDelete().Model((*webhooks.Config)(nil)).Where("id = ?", config.ID).Exec(ctx)
+	}).Exec(ctx)
+	require.NoError(t, err)
+	_, err = db.NewDelete().Model((*webhooks.Config)(nil)).Where("id = ?", config.ID).Exec(ctx)
 	require.NoError(t, err)
 
 	migrated, err := store.BackfillDeliveries(ctx, 30*24*time.Hour, 90*24*time.Hour, 100)
@@ -374,7 +381,7 @@ func TestBackfillCreatesNonReplayableTombstoneWithoutLegacySecret(t *testing.T) 
 	require.NoError(t, db.NewSelect().Model(&tombstone).Where("id = ?", config.ID).Scan(ctx))
 	require.False(t, tombstone.Active)
 	require.NotNil(t, tombstone.DeletedAt)
-	require.NotEqual(t, legacySecret, tombstone.Secret)
+	require.NotEqual(t, previousSecret, tombstone.Secret)
 	delivery, err := store.GetDelivery(ctx, webhookID)
 	require.NoError(t, err)
 	require.Equal(t, webhooks.StatusDeliveryCancelled, delivery.Status)

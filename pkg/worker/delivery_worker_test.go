@@ -37,6 +37,12 @@ type deliveryMockStore struct {
 	claimRelease   chan struct{}
 }
 
+type noRetryPolicy struct{}
+
+func (*noRetryPolicy) GetRetryDelay(int) (time.Duration, error) {
+	return 0, nil
+}
+
 func (m *deliveryMockStore) FindManyConfigs(context.Context, map[string]any) ([]webhooks.Config, error) {
 	if m.findError != nil {
 		return nil, m.findError

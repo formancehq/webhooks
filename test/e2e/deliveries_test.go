@@ -27,7 +27,7 @@ var _ = Context("Durable deliveries", func() {
 				Postgres: db.GetValue().ConnectionOptions(), Topics: []string{"durable"},
 				Debug: debug, Output: GinkgoWriter, NatsURL: natsServer.GetValue().URL,
 				RetryPeriod: 100 * time.Millisecond, MinBackoffDelay: 100 * time.Millisecond,
-				AbortAfter: 3 * time.Second, DeliveryPipeline: true,
+				AbortAfter: 3 * time.Second,
 			}
 		})
 	)

@@ -38,7 +38,6 @@ func TestStore(t *testing.T) {
 
 	// Cleanup tables
 	require.NoError(t, db.ResetModel(context.TODO(), (*webhooks.Config)(nil)))
-	require.NoError(t, db.ResetModel(context.TODO(), (*webhooks.Attempt)(nil)))
 
 	store, err := postgres.NewStore(db)
 	require.NoError(t, err)
@@ -50,13 +49,6 @@ func TestStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(cfgs))
 
-	ids, err := store.FindWebhookIDsToRetry(context.Background(), 50)
-	require.NoError(t, err)
-	require.Equal(t, 0, len(ids))
-
-	atts, err := store.FindAttemptsToRetryByWebhookID(context.Background(), "")
-	require.NoError(t, err)
-	require.Equal(t, 0, len(atts))
 }
 
 func TestConfigsInsert(t *testing.T) {

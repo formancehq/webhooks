@@ -585,7 +585,7 @@ func (s Store) backfillWebhook(ctx context.Context, webhookID string) error {
 	attempts := []webhooks.Attempt{}
 	if err := s.db.NewSelect().Model(&attempts).Where("webhook_id = ?", webhookID).
 		OrderExpr("created_at ASC, id ASC").Scan(ctx); err != nil {
-		return errors.Wrap(err, "reading legacy attempts")
+		return errors.Wrap(err, "reading pre-deliveries attempts")
 	}
 	if len(attempts) == 0 {
 		return nil

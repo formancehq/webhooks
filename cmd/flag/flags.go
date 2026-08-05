@@ -14,13 +14,12 @@ const (
 
 	AuditEnabled = "audit-enabled"
 
-	RetryPeriod      = "retry-period"
-	RetryBatchSize   = "retry-batch-size"
-	AbortAfter       = "abort-after"
-	MaxAttempts      = "max-attempts"
-	MinBackoffDelay  = "min-backoff-delay"
-	MaxBackoffDelay  = "max-backoff-delay"
-	DeliveryPipeline = "delivery-pipeline"
+	RetryPeriod     = "retry-period"
+	RetryBatchSize  = "retry-batch-size"
+	AbortAfter      = "abort-after"
+	MaxAttempts     = "max-attempts"
+	MinBackoffDelay = "min-backoff-delay"
+	MaxBackoffDelay = "max-backoff-delay"
 
 	RetentionPeriod       = "retention-period"
 	RetentionSuccessDelay = "retention-success-delay"
@@ -54,7 +53,7 @@ func Init(flagSet *pflag.FlagSet) {
 
 	flagSet.String(Listen, DefaultBindAddressServer, "server HTTP bind address")
 	flagSet.Duration(RetryPeriod, DefaultRetryPeriod, "worker retry period")
-	flagSet.Int(RetryBatchSize, DefaultRetryBatchSize, "number of webhook IDs to claim per retry tick")
+	flagSet.Int(RetryBatchSize, DefaultRetryBatchSize, "number of deliveries to claim per dispatcher tick")
 	flagSet.Bool(Worker, false, "Enable worker on server")
 	flagSet.Bool(AuditEnabled, false, "Enable HTTP audit events publishing")
 
@@ -64,11 +63,9 @@ func Init(flagSet *pflag.FlagSet) {
 	flagSet.Int(MaxAttempts, DefaultMaxAttempts, "hard cap on delivery attempts per webhook (0 disables the cap, leaving abort-after as the only bound)")
 	flagSet.Duration(MinBackoffDelay, time.Minute, "minimum backoff delay")
 	flagSet.Duration(MaxBackoffDelay, time.Hour, "maximum backoff delay")
-	flagSet.String(DeliveryPipeline, "legacy", "delivery pipeline to run: legacy or deliveries")
-
-	flagSet.Duration(RetentionPeriod, DefaultRetentionPeriod, "interval between attempts-table cleanup runs")
-	flagSet.Duration(RetentionSuccessDelay, DefaultRetentionSuccessDelay, "retain 'success' attempts for this long before purging (0 disables)")
-	flagSet.Duration(RetentionFailedDelay, DefaultRetentionFailedDelay, "retain 'failed' attempts for this long before purging (0 disables)")
+	flagSet.Duration(RetentionPeriod, DefaultRetentionPeriod, "interval between deliveries cleanup runs")
+	flagSet.Duration(RetentionSuccessDelay, DefaultRetentionSuccessDelay, "retain succeeded deliveries for this long before purging (0 disables)")
+	flagSet.Duration(RetentionFailedDelay, DefaultRetentionFailedDelay, "retain failed deliveries for this long before purging (0 disables)")
 
 	flagSet.Bool(AutoMigrate, false, "auto migrate database")
 }

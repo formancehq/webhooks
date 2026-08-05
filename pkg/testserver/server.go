@@ -38,15 +38,14 @@ type OTLPConfig struct {
 }
 
 type Configuration struct {
-	Postgres         bunconnect.ConnectionOptions
-	Topics           []string
-	Debug            bool
-	Output           io.Writer
-	NatsURL          string
-	RetryPeriod      time.Duration
-	MinBackoffDelay  time.Duration
-	AbortAfter       time.Duration
-	DeliveryPipeline bool
+	Postgres        bunconnect.ConnectionOptions
+	Topics          []string
+	Debug           bool
+	Output          io.Writer
+	NatsURL         string
+	RetryPeriod     time.Duration
+	MinBackoffDelay time.Duration
+	AbortAfter      time.Duration
 }
 
 type Logger interface {
@@ -80,10 +79,6 @@ func (s *Server) Start() error {
 		"--" + publish.PublisherNatsURLFlag, s.configuration.NatsURL,
 		"--" + publish.PublisherTopicMappingFlag, fmt.Sprintf("*:%s", s.id),
 	}
-	if s.configuration.DeliveryPipeline {
-		args = append(args, "--"+flag.DeliveryPipeline, "deliveries")
-	}
-
 	for _, topic := range s.configuration.Topics {
 		args = append(args, "--"+flag.KafkaTopics, topic)
 	}

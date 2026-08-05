@@ -48,10 +48,6 @@ func serve(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	pipeline, err := deliveryPipelineFromFlags(cmd)
-	if err != nil {
-		return err
-	}
 
 	listen, _ := cmd.Flags().GetString(flag.Listen)
 	auditEnabled, _ := cmd.Flags().GetBool(flag.AuditEnabled)
@@ -90,10 +86,8 @@ func serve(cmd *cobra.Command, _ []string) error {
 				maxAttempts,
 			),
 			retryBatchSize,
-			service.IsDebug(cmd),
 			topics,
 			retentionConfigFromFlags(cmd),
-			pipeline == "deliveries",
 		))
 	}
 

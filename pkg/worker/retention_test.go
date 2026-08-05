@@ -20,15 +20,14 @@ func (s *deliveryOnlyRetentionStore) PurgeFinishedDeliveries(context.Context, ti
 func TestRetentionConfigEnabled(t *testing.T) {
 	require.False(t, RetentionConfig{}.Enabled())
 
-	require.True(t, RetentionConfig{Period: time.Hour}.Enabled(),
-		"the runner must start to reclaim deleted/inactive config attempts even when terminal purging is disabled")
+	require.True(t, RetentionConfig{Period: time.Hour}.Enabled())
 	require.True(t, RetentionConfig{SuccessDelay: time.Hour}.Enabled())
 	require.True(t, RetentionConfig{FailedDelay: time.Hour}.Enabled())
 }
 
-func TestDurableRetentionLeavesLegacyAttemptsReadOnly(t *testing.T) {
+func TestRetentionPurgesDeliveries(t *testing.T) {
 	store := &deliveryOnlyRetentionStore{}
-	retention := NewDeliveryRetention(store, RetentionConfig{Period: time.Hour})
+	retention := NewRetention(store, RetentionConfig{Period: time.Hour})
 	retention.runOnce(context.Background())
 	require.Equal(t, 1, store.deliveryCalls)
 }
