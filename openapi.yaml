@@ -435,11 +435,11 @@ components:
         eventType: {type: string, description: "Type of the event being delivered"}
         payload: {type: string, description: Present only on delivery detail responses.}
         status: {$ref: '#/components/schemas/DeliveryStatus'}
-        attemptCount: {type: integer, description: "Number of attempts made in the current retry cycle"}
-        replayGeneration: {type: integer, description: "Incremented each time the delivery is replayed, grouping attempts into retry cycles"}
-        cycleStartedAt: {type: string, format: date-time, description: "When the current retry cycle began. Cleared when the delivery is replayed"}
+        attemptCount: {type: integer, description: "Number of attempts made in the current retry cycle. Reset when a failed delivery is replayed"}
+        replayGeneration: {type: integer, description: "Incremented each time a failed delivery is replayed, grouping attempts into retry cycles. Replaying a pending delivery leaves it unchanged"}
+        cycleStartedAt: {type: string, format: date-time, description: "When the current retry cycle began. Cleared when a failed delivery is replayed"}
         nextAttemptAt: {type: string, format: date-time, description: "When the next delivery attempt is scheduled"}
-        claimedAt: {type: string, format: date-time, description: "When a worker claimed this delivery for the attempt in flight. Cleared when the delivery is replayed"}
+        claimedAt: {type: string, format: date-time, description: "When a worker claimed this delivery for the attempt in flight. Cleared when a failed delivery is replayed"}
         lastAttemptAt: {type: string, format: date-time, description: "When the most recent attempt was made"}
         lastStatusCode: {type: integer, description: "HTTP status code returned by the most recent attempt"}
         lastError: {type: string, description: "Error reported by the most recent attempt"}
@@ -503,7 +503,7 @@ components:
       required: [createdAtFrom]
       properties:
         createdAtFrom: {type: string, format: date-time, description: "Replay deliveries created at or after this time"}
-        createdAtTo: {type: string, format: date-time, description: "Replay deliveries created before this time. Defaults to now when omitted"}
+        createdAtTo: {type: string, format: date-time, description: "Replay deliveries created at or before this time. Defaults to now when omitted"}
         statuses:
           type: array
           items:
@@ -645,7 +645,7 @@ components:
       properties:
         secret:
           type: string
-          description: The new signing secret. Generated automatically when omitted
+          description: The new signing secret, 24 random bytes encoded as base64
           example: V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3
       required:
         - secret
