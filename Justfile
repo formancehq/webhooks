@@ -23,6 +23,7 @@ tests:
 
 generate-client:
   @speakeasy generate sdk -s openapi.yaml -o ./pkg/client -l go
+  @cd pkg/client && go mod edit -toolchain=go1.27.3
 
 release-local:
   @goreleaser release --nightly --skip=publish --clean

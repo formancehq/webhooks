@@ -2,6 +2,8 @@ module github.com/formancehq/webhooks
 
 go 1.26.0
 
+toolchain go1.27.3
+
 replace github.com/formancehq/webhooks/pkg/client => ./pkg/client
 
 require (
