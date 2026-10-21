@@ -303,8 +303,8 @@ func TestRunDeliveryDispatcherWaitsForRunToFinishOnStop(t *testing.T) {
 		t.Fatal("dispatcher claim did not observe shutdown cancellation")
 	}
 	select {
-	case <-stopped:
-		t.Fatal("shutdown returned before the dispatcher finished")
+	case err := <-stopped:
+		t.Fatalf("shutdown returned before the dispatcher finished: %v", err)
 	default:
 	}
 	close(claimRelease)
