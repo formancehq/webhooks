@@ -7,25 +7,42 @@ import (
 	"time"
 )
 
+// Delivery - An event queued for delivery to a webhook endpoint, tracking its retry state
 type Delivery struct {
-	ID             string  `json:"id"`
-	EventID        string  `json:"eventID"`
+	// Unique identifier of the delivery
+	ID string `json:"id"`
+	// Identifier of the event being delivered
+	EventID string `json:"eventID"`
+	// Key sent with the request so the receiver can deduplicate retries of the same delivery
 	IdempotencyKey *string `json:"idempotencyKey,omitempty"`
-	ConfigID       string  `json:"configID"`
-	EventType      string  `json:"eventType"`
+	// Identifier of the webhook configuration this delivery targets
+	ConfigID string `json:"configID"`
+	// Type of the event being delivered
+	EventType string `json:"eventType"`
 	// Present only on delivery detail responses.
-	Payload          *string        `json:"payload,omitempty"`
-	Status           DeliveryStatus `json:"status"`
-	AttemptCount     int64          `json:"attemptCount"`
-	ReplayGeneration int64          `json:"replayGeneration"`
-	CycleStartedAt   *time.Time     `json:"cycleStartedAt,omitempty"`
-	NextAttemptAt    *time.Time     `json:"nextAttemptAt,omitempty"`
-	ClaimedAt        *time.Time     `json:"claimedAt,omitempty"`
-	LastAttemptAt    *time.Time     `json:"lastAttemptAt,omitempty"`
-	LastStatusCode   *int64         `json:"lastStatusCode,omitempty"`
-	LastError        *string        `json:"lastError,omitempty"`
-	CreatedAt        time.Time      `json:"createdAt"`
-	UpdatedAt        time.Time      `json:"updatedAt"`
+	Payload *string `json:"payload,omitempty"`
+	// Current state of a delivery in its retry lifecycle
+	Status DeliveryStatus `json:"status"`
+	// Number of attempts made in the current retry cycle. Reset when a failed delivery is replayed
+	AttemptCount int64 `json:"attemptCount"`
+	// Incremented each time a failed delivery is replayed, grouping attempts into retry cycles. Replaying a pending delivery leaves it unchanged
+	ReplayGeneration int64 `json:"replayGeneration"`
+	// When the current retry cycle began. Cleared when a failed delivery is replayed
+	CycleStartedAt *time.Time `json:"cycleStartedAt,omitempty"`
+	// When the next delivery attempt is scheduled
+	NextAttemptAt *time.Time `json:"nextAttemptAt,omitempty"`
+	// When a worker claimed this delivery for the attempt in flight. Cleared when a failed delivery is replayed
+	ClaimedAt *time.Time `json:"claimedAt,omitempty"`
+	// When the most recent attempt was made
+	LastAttemptAt *time.Time `json:"lastAttemptAt,omitempty"`
+	// HTTP status code returned by the most recent attempt
+	LastStatusCode *int64 `json:"lastStatusCode,omitempty"`
+	// Error reported by the most recent attempt
+	LastError *string `json:"lastError,omitempty"`
+	// When the delivery was created
+	CreatedAt time.Time `json:"createdAt"`
+	// When the delivery was last modified
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 func (d Delivery) MarshalJSON() ([]byte, error) {

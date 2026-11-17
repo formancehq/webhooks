@@ -40,8 +40,8 @@ var _ = Context("Config get", func() {
 
 	When("inserting 2 configs", func() {
 		var (
-			insertResp1 *components.ConfigResponse
-			insertResp2 *components.ConfigResponse
+			insertResp1 *components.ConfigWithSecretResponse
+			insertResp2 *components.ConfigWithSecretResponse
 		)
 
 		BeforeEach(func() {
@@ -66,14 +66,14 @@ var _ = Context("Config get", func() {
 				cfg1,
 			)
 			Expect(err).ToNot(HaveOccurred())
-			insertResp1 = response.ConfigResponse
+			insertResp1 = response.ConfigWithSecretResponse
 
 			response, err = srv.GetValue().Client().Webhooks.V1.InsertConfig(
 				ctx,
 				cfg2,
 			)
 			Expect(err).ToNot(HaveOccurred())
-			insertResp2 = response.ConfigResponse
+			insertResp2 = response.ConfigWithSecretResponse
 		})
 
 		Context("getting all configs without filters", func() {

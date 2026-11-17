@@ -58,15 +58,21 @@ func (s Store) InsertOneConfig(ctx context.Context, cfgUser webhooks.ConfigUser)
 	return cfg, nil
 }
 
+// UpdateOneConfig updates a config. An empty cfgUser.Secret (omitted, null
+// or "" in the request body) preserves the stored secret atomically in the
+// SQL write itself: the secret column is only included for a replacement,
+// so there is no read-merge race and no sentinel value is ever persisted.
 func (s Store) UpdateOneConfig(ctx context.Context, id string, cfgUser webhooks.ConfigUser) error {
-	if _, err := s.db.NewUpdate().
+	q := s.db.NewUpdate().
 		Model(&webhooks.Config{}).
 		Where("id = ?", id).
 		Where("deleted_at IS NULL").
 		Set("endpoint = ?", cfgUser.Endpoint).
-		Set("secret = ?", cfgUser.Secret).
-		Set("event_types = ?", pgdialect.Array(cfgUser.EventTypes)).
-		Exec(ctx); err != nil {
+		Set("event_types = ?", pgdialect.Array(cfgUser.EventTypes))
+	if cfgUser.Secret != "" {
+		q = q.Set("secret = ?", cfgUser.Secret)
+	}
+	if _, err := q.Exec(ctx); err != nil {
 		return errors.Wrap(err, "updating config")
 	}
 

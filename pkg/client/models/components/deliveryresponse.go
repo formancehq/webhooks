@@ -3,6 +3,7 @@
 package components
 
 type DeliveryResponse struct {
+	// An event queued for delivery to a webhook endpoint, tracking its retry state
 	Data Delivery `json:"data"`
 }
 

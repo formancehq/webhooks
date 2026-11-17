@@ -38,7 +38,7 @@ var _ = Context("Config tests", func() {
 		Context("inserting a config with an endpoint to a success handler", func() {
 			var (
 				httpServer *httptest.Server
-				insertResp *components.ConfigResponse
+				insertResp *components.ConfigWithSecretResponse
 				secret     = webhooks.NewSecret()
 			)
 
@@ -83,7 +83,7 @@ var _ = Context("Config tests", func() {
 					cfg,
 				)
 				Expect(err).ToNot(HaveOccurred())
-				insertResp = response.ConfigResponse
+				insertResp = response.ConfigWithSecretResponse
 				DeferCleanup(func() {
 					httpServer.Close()
 				})
@@ -109,7 +109,7 @@ var _ = Context("Config tests", func() {
 		})
 
 		Context("inserting a config with an endpoint to a fail handler", func() {
-			var insertResp *components.ConfigResponse
+			var insertResp *components.ConfigWithSecretResponse
 
 			BeforeEach(func() {
 				httpServer := httptest.NewServer(http.HandlerFunc(
@@ -129,7 +129,7 @@ var _ = Context("Config tests", func() {
 					cfg,
 				)
 				Expect(err).ToNot(HaveOccurred())
-				insertResp = response.ConfigResponse
+				insertResp = response.ConfigWithSecretResponse
 				DeferCleanup(func() {
 					httpServer.Close()
 				})

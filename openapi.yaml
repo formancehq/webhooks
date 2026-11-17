@@ -77,11 +77,14 @@ paths:
         required: true
       responses:
         '200':
-          description: Config created successfully.
+          description: >-
+            Config created successfully. The response carries the signing
+            secret (supplied or generated): this is the only moment the
+            secret is disclosed. Later reads never return it.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ConfigResponse'
+                $ref: '#/components/schemas/ConfigWithSecretResponse'
         default:
           description: Error
           content:
@@ -120,7 +123,15 @@ paths:
             - webhooks:write
     put:
       summary: Update one config
-      description: Update a webhooks config by ID.
+      description: >-
+        Update a webhooks config by ID.
+
+
+        Secret semantics on update: an omitted, null or empty `secret`
+        preserves the stored signing secret unchanged (no rotation, no
+        generation). A non-empty `secret` must be base64 of exactly 24 bytes
+        and replaces the stored secret (explicit rotation). Use
+        `PUT /configs/{id}/secret/change` to rotate with a generated secret.
       operationId: updateConfig
       tags:
         - webhooks.v1
@@ -276,11 +287,14 @@ paths:
             example: 4997257d-dfb6-445b-929c-cbe2ab182818
       responses:
         '200':
-          description: Secret successfully changed.
+          description: >-
+            Secret successfully changed. The response carries the new signing
+            secret: this is the only moment the new secret is disclosed.
+            Later reads never return it.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ConfigResponse'
+                $ref: '#/components/schemas/ConfigWithSecretResponse'
         default:
           description: Error
           content:
@@ -545,7 +559,17 @@ components:
           example: https://example.com
         secret:
           type: string
-          description: Secret used to sign delivery payloads. Generated automatically when omitted
+          nullable: true
+          writeOnly: true
+          description: >-
+            Secret used to sign delivery payloads.
+
+            On creation (POST /configs): generated automatically when omitted,
+            null or empty.
+
+            On update (PUT /configs/{id}): omitted, null or empty preserves
+            the stored secret unchanged; a non-empty value must be base64 of
+            exactly 24 bytes and replaces the stored secret.
           example: V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3
         eventTypes:
           type: array
@@ -595,22 +619,33 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/WebhooksConfig'
+    ConfigWithSecretResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/WebhooksConfigWithSecret'
     WebhooksConfig:
       type: object
-      description: A webhook endpoint together with the event types it subscribes to
+      description: >-
+        A webhook endpoint together with the event types it subscribes to.
+
+        The stored signing secret is never included in this representation:
+        it is disclosed exactly once, in ConfigWithSecretResponse, at creation
+        (POST /configs) and at secret rotation (PUT /configs/{id}/secret/change).
       properties:
         id:
           type: string
           format: uuid
           description: Unique identifier of the configuration
+        name:
+          type: string
+          description: Name of the webhook configuration
         endpoint:
           type: string
           description: URL events are delivered to
           example: https://example.com
-        secret:
-          type: string
-          description: Secret used to sign delivery payloads, letting the receiver verify their authenticity
-          example: V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3
         eventTypes:
           type: array
           description: Types of event that trigger a delivery to this endpoint
@@ -634,12 +669,30 @@ components:
           description: When the configuration was last modified
       required:
         - id
+        - name
         - endpoint
-        - secret
         - eventTypes
         - active
         - createdAt
         - updatedAt
+    WebhooksConfigWithSecret:
+      type: object
+      description: >-
+        A webhook configuration including its signing secret. Returned exactly
+        once, at creation (POST /configs) and at secret rotation
+        (PUT /configs/{id}/secret/change), so the caller can store the secret
+        for signature verification. Never returned by read, update, activate
+        or deactivate endpoints.
+      allOf:
+        - $ref: '#/components/schemas/WebhooksConfig'
+        - type: object
+          properties:
+            secret:
+              type: string
+              description: The signing secret (24 random bytes, base64 encoded), disclosed only in this response
+              example: V0bivxRWveaoz08afqjU6Ko/jwO0Cb+3
+          required:
+            - secret
     ConfigChangeSecret:
       type: object
       properties:

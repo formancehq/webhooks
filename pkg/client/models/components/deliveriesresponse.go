@@ -2,6 +2,7 @@
 
 package components
 
+// DeliveriesResponseCursor - Paginated cursor wrapping the list of deliveries
 type DeliveriesResponseCursor struct {
 	PageSize *int64     `json:"pageSize,omitempty"`
 	HasMore  bool       `json:"hasMore"`
@@ -38,6 +39,7 @@ func (o *DeliveriesResponseCursor) GetData() []Delivery {
 }
 
 type DeliveriesResponse struct {
+	// Paginated cursor wrapping the list of deliveries
 	Cursor DeliveriesResponseCursor `json:"cursor"`
 }
 

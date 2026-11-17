@@ -15,6 +15,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// testAttemptResponse keeps the stored attempt representation private while
+// preserving the historical response fields other than the signing key.
+type testAttemptResponse struct {
+	webhooks.Attempt
+	Config webhooks.ConfigResponse `json:"config"`
+}
+
 func (h *serverHandler) testOneConfigHandle(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, PathParamId)
 	cfgs, err := h.store.FindManyConfigs(r.Context(), map[string]any{"id": id})
@@ -33,8 +40,8 @@ func (h *serverHandler) testOneConfigHandle(w http.ResponseWriter, r *http.Reque
 			apierrors.ResponseError(w, r, err)
 		} else {
 			logging.FromContext(r.Context()).Debugf("GET %s/%s%s", PathConfigs, id, PathTest)
-			resp := api.BaseResponse[webhooks.Attempt]{
-				Data: &attempt,
+			resp := api.BaseResponse[testAttemptResponse]{
+				Data: &testAttemptResponse{Attempt: attempt, Config: webhooks.NewConfigResponse(attempt.Config)},
 			}
 			if err := json.NewEncoder(w).Encode(resp); err != nil {
 				logging.FromContext(r.Context()).Errorf("json.Encoder.Encode: %s", err)

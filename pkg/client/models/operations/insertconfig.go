@@ -8,8 +8,8 @@ import (
 
 type InsertConfigResponse struct {
 	HTTPMeta components.HTTPMetadata `json:"-"`
-	// Config created successfully.
-	ConfigResponse *components.ConfigResponse
+	// Config created successfully. The response carries the signing secret (supplied or generated): this is the only moment the secret is disclosed. Later reads never return it.
+	ConfigWithSecretResponse *components.ConfigWithSecretResponse
 }
 
 func (o *InsertConfigResponse) GetHTTPMeta() components.HTTPMetadata {
@@ -19,9 +19,9 @@ func (o *InsertConfigResponse) GetHTTPMeta() components.HTTPMetadata {
 	return o.HTTPMeta
 }
 
-func (o *InsertConfigResponse) GetConfigResponse() *components.ConfigResponse {
+func (o *InsertConfigResponse) GetConfigWithSecretResponse() *components.ConfigWithSecretResponse {
 	if o == nil {
 		return nil
 	}
-	return o.ConfigResponse
+	return o.ConfigWithSecretResponse
 }

@@ -28,7 +28,7 @@ var _ = Context("Config activation", func() {
 			}
 		})
 		secret     = webhooks.NewSecret()
-		insertResp *components.ConfigResponse
+		insertResp *components.ConfigWithSecretResponse
 		ctx        = logging.TestingContext()
 	)
 
@@ -46,7 +46,7 @@ var _ = Context("Config activation", func() {
 		)
 		Expect(err).NotTo(HaveOccurred())
 
-		insertResp = response.ConfigResponse
+		insertResp = response.ConfigWithSecretResponse
 	})
 
 	Context("deactivating the inserted one", func() {

@@ -28,9 +28,9 @@ func (h *serverHandler) getManyConfigsHandle(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	resp := api.BaseResponse[webhooks.Config]{
-		Cursor: &bunpaginate.Cursor[webhooks.Config]{
-			Data: cfgs,
+	resp := api.BaseResponse[webhooks.ConfigResponse]{
+		Cursor: &bunpaginate.Cursor[webhooks.ConfigResponse]{
+			Data: webhooks.NewConfigResponses(cfgs),
 		},
 	}
 

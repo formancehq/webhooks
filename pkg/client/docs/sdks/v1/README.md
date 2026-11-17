@@ -118,7 +118,7 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
-    if res.ConfigResponse != nil {
+    if res.ConfigWithSecretResponse != nil {
         // handle response
     }
 }
@@ -199,6 +199,8 @@ func main() {
 ## UpdateConfig
 
 Update a webhooks config by ID.
+
+Secret semantics on update: an omitted, null or empty `secret` preserves the stored signing secret unchanged (no rotation, no generation). A non-empty `secret` must be base64 of exactly 24 bytes and replaces the stored secret (explicit rotation). Use `PUT /configs/{id}/secret/change` to rotate with a generated secret.
 
 ### Example Usage
 
@@ -463,7 +465,7 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
-    if res.ConfigResponse != nil {
+    if res.ConfigWithSecretResponse != nil {
         // handle response
     }
 }

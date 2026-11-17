@@ -9,7 +9,8 @@ import (
 )
 
 type GetDeliveriesRequest struct {
-	ConfigID      *string                    `queryParam:"style=form,explode=true,name=configId"`
+	ConfigID *string `queryParam:"style=form,explode=true,name=configId"`
+	// Current state of a delivery in its retry lifecycle
 	Status        *components.DeliveryStatus `queryParam:"style=form,explode=true,name=status"`
 	CreatedAtFrom *time.Time                 `queryParam:"style=form,explode=true,name=createdAtFrom"`
 	CreatedAtTo   *time.Time                 `queryParam:"style=form,explode=true,name=createdAtTo"`

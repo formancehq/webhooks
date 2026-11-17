@@ -49,7 +49,7 @@ var _ = Context("Durable deliveries", func() {
 			Endpoint: endpoint.URL, EventTypes: []string{"durable"},
 		})
 		Expect(err).ToNot(HaveOccurred())
-		configID := inserted.ConfigResponse.Data.ID
+		configID := inserted.ConfigWithSecretResponse.Data.ID
 		Expect(natsServer.GetValue().Client(GinkgoT()).Publish("durable", []byte(`{"type":"durable","idempotency_key":"durable-event"}`))).To(Succeed())
 
 		var delivery components.Delivery

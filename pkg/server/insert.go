@@ -29,8 +29,10 @@ func (h *serverHandler) insertOneConfigHandle(w http.ResponseWriter, r *http.Req
 	c, err := h.store.InsertOneConfig(r.Context(), cfg)
 	if err == nil {
 		logging.FromContext(r.Context()).Debugf("POST %s: inserted id %s", PathConfigs, c.ID)
-		resp := api.BaseResponse[webhooks.Config]{
-			Data: &c,
+		// One-time disclosure: the created secret (supplied or generated) is
+		// returned exactly here and never again on any read path.
+		resp := api.BaseResponse[webhooks.ConfigWithSecret]{
+			Data: webhooks.NewConfigWithSecretPtr(c),
 		}
 
 		if err := json.NewEncoder(w).Encode(resp); err != nil {

@@ -19,8 +19,8 @@ func (h *serverHandler) activateOneConfigHandle(w http.ResponseWriter, r *http.R
 	c, err := h.store.UpdateOneConfigActivation(r.Context(), id, true)
 	if err == nil || errors.Is(err, storage.ErrConfigNotModified) {
 		logging.FromContext(r.Context()).Debugf("PUT %s/%s%s", PathConfigs, id, PathActivate)
-		resp := api.BaseResponse[webhooks.Config]{
-			Data: &c,
+		resp := api.BaseResponse[webhooks.ConfigResponse]{
+			Data: webhooks.NewConfigResponsePtr(c),
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			logging.FromContext(r.Context()).Errorf("json.Encoder.Encode: %s", err)
@@ -41,8 +41,8 @@ func (h *serverHandler) deactivateOneConfigHandle(w http.ResponseWriter, r *http
 	c, err := h.store.UpdateOneConfigActivation(r.Context(), id, false)
 	if err == nil || errors.Is(err, storage.ErrConfigNotModified) {
 		logging.FromContext(r.Context()).Debugf("PUT %s/%s%s", PathConfigs, id, PathDeactivate)
-		resp := api.BaseResponse[webhooks.Config]{
-			Data: &c,
+		resp := api.BaseResponse[webhooks.ConfigResponse]{
+			Data: webhooks.NewConfigResponsePtr(c),
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			logging.FromContext(r.Context()).Errorf("json.Encoder.Encode: %s", err)
