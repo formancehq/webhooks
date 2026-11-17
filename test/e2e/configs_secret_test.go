@@ -27,7 +27,7 @@ var _ = Context("Config secrets", func() {
 			}
 		})
 		secret     = webhooks.NewSecret()
-		insertResp *components.ConfigResponse
+		insertResp *components.ConfigWithSecretResponse
 	)
 
 	BeforeEach(func() {
@@ -44,11 +44,13 @@ var _ = Context("Config secrets", func() {
 		)
 		Expect(err).ToNot(HaveOccurred())
 
-		insertResp = response.ConfigResponse
+		insertResp = response.ConfigWithSecretResponse
 	})
 
 	Context("changing the secret of the inserted one", func() {
 		Context("without passing a secret", func() {
+			var rotateResp *components.ConfigWithSecretResponse
+
 			BeforeEach(func() {
 				response, err := srv.GetValue().Client().Webhooks.V1.ChangeConfigSecret(
 					ctx,
@@ -60,11 +62,15 @@ var _ = Context("Config secrets", func() {
 					},
 				)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(response.ConfigResponse.Data.Secret).To(Not(Equal(insertResp.Data.Secret)))
+				rotateResp = response.ConfigWithSecretResponse
+				// one-time disclosure: the rotation response carries the new
+				// secret, which must differ from the previous one
+				Expect(rotateResp.Data.Secret).To(Not(BeEmpty()))
+				Expect(rotateResp.Data.Secret).To(Not(Equal(insertResp.Data.Secret)))
 			})
 
 			Context("getting all configs", func() {
-				It("should return 1 config with a different secret", func() {
+				It("should return 1 config without any secret", func() {
 					response, err := srv.GetValue().Client().Webhooks.V1.GetManyConfigs(
 						ctx,
 						operations.GetManyConfigsRequest{},
@@ -74,8 +80,7 @@ var _ = Context("Config secrets", func() {
 					resp := response.ConfigsResponse
 					Expect(resp.Cursor.HasMore).To(BeFalse())
 					Expect(resp.Cursor.Data).To(HaveLen(1))
-					Expect(resp.Cursor.Data[0].Secret).To(Not(BeNil()))
-					Expect(resp.Cursor.Data[0].Secret).To(Not(Equal(insertResp.Data.Secret)))
+					// reads never disclose the stored secret
 				})
 			})
 		})
@@ -94,11 +99,13 @@ var _ = Context("Config secrets", func() {
 				)
 				Expect(err).NotTo(HaveOccurred())
 
-				Expect(response.ConfigResponse.Data.Secret).To(Equal(newSecret))
+				// one-time disclosure: the rotation response reveals exactly
+				// the supplied secret
+				Expect(response.ConfigWithSecretResponse.Data.Secret).To(Equal(newSecret))
 			})
 
 			Context("getting all configs", func() {
-				It("should return 1 config with the passed secret", func() {
+				It("should return 1 config without the secret", func() {
 					response, err := srv.GetValue().Client().Webhooks.V1.GetManyConfigs(
 						ctx,
 						operations.GetManyConfigsRequest{},
@@ -108,7 +115,7 @@ var _ = Context("Config secrets", func() {
 					resp := response.ConfigsResponse
 					Expect(resp.Cursor.HasMore).To(BeFalse())
 					Expect(resp.Cursor.Data).To(HaveLen(1))
-					Expect(resp.Cursor.Data[0].Secret).To(Equal(newSecret))
+					// the stored secret is not returned on reads
 				})
 			})
 		})

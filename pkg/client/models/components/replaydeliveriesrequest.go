@@ -36,12 +36,18 @@ func (e *Statuses) UnmarshalJSON(data []byte) error {
 }
 
 type ReplayDeliveriesRequest struct {
-	CreatedAtFrom time.Time  `json:"createdAtFrom"`
-	CreatedAtTo   *time.Time `json:"createdAtTo,omitempty"`
-	Statuses      []Statuses `json:"statuses,omitempty"`
-	ConfigIds     []string   `json:"configIds,omitempty"`
-	Cursor        *string    `json:"cursor,omitempty"`
-	PageSize      *int64     `default:"1000" json:"pageSize"`
+	// Replay deliveries created at or after this time
+	CreatedAtFrom time.Time `json:"createdAtFrom"`
+	// Replay deliveries created at or before this time. Defaults to now when omitted
+	CreatedAtTo *time.Time `json:"createdAtTo,omitempty"`
+	// Restrict the replay to deliveries in these statuses
+	Statuses []Statuses `json:"statuses,omitempty"`
+	// Restrict the replay to deliveries targeting these webhook configurations
+	ConfigIds []string `json:"configIds,omitempty"`
+	// Pagination cursor from a previous replay response, used to continue a large replay
+	Cursor *string `json:"cursor,omitempty"`
+	// Maximum number of deliveries to process in this call
+	PageSize *int64 `default:"1000" json:"pageSize"`
 }
 
 func (r ReplayDeliveriesRequest) MarshalJSON() ([]byte, error) {

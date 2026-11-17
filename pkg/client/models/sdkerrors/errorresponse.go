@@ -9,9 +9,12 @@ import (
 
 // ErrorResponse - Error
 type ErrorResponse struct {
-	ErrorCode    components.ErrorsEnum `json:"errorCode"`
-	ErrorMessage string                `json:"errorMessage"`
-	Details      *string               `json:"details,omitempty"`
+	// Machine-readable error code identifying the failure
+	ErrorCode components.ErrorsEnum `json:"errorCode"`
+	// Human-readable description of the error
+	ErrorMessage string `json:"errorMessage"`
+	// Optional link carrying additional context about the error
+	Details *string `json:"details,omitempty"`
 }
 
 var _ error = &ErrorResponse{}

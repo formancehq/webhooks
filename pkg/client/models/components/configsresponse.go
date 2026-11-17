@@ -2,7 +2,9 @@
 
 package components
 
+// Cursor - Paginated cursor wrapping the list of configurations
 type Cursor struct {
+	// Whether further pages are available
 	HasMore bool             `json:"hasMore"`
 	Data    []WebhooksConfig `json:"data"`
 }
@@ -22,6 +24,7 @@ func (o *Cursor) GetData() []WebhooksConfig {
 }
 
 type ConfigsResponse struct {
+	// Paginated cursor wrapping the list of configurations
 	Cursor Cursor `json:"cursor"`
 }
 

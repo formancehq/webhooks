@@ -6,6 +6,7 @@ import (
 	"github.com/formancehq/go-libs/v2/logging"
 	"github.com/formancehq/go-libs/v2/testing/platform/pgtesting"
 	"github.com/formancehq/webhooks/pkg/client/models/components"
+	"github.com/formancehq/webhooks/pkg/client/models/operations"
 	"github.com/formancehq/webhooks/pkg/client/models/sdkerrors"
 	"github.com/formancehq/webhooks/pkg/testserver"
 	"time"
@@ -42,14 +43,24 @@ var _ = Context("Config insertion", func() {
 		)
 		Expect(err).ToNot(HaveOccurred())
 
-		insertResp := response.ConfigResponse
+		insertResp := response.ConfigWithSecretResponse
 		Expect(insertResp.Data.Endpoint).To(Equal(cfg.Endpoint))
 		Expect(insertResp.Data.EventTypes).To(Equal(cfg.EventTypes))
 		Expect(insertResp.Data.Active).To(BeTrue())
 		Expect(insertResp.Data.CreatedAt).NotTo(Equal(time.Time{}))
 		Expect(insertResp.Data.UpdatedAt).NotTo(Equal(time.Time{}))
+		// one-time disclosure: creation reveals a generated secret...
+		Expect(insertResp.Data.Secret).NotTo(BeEmpty())
 		_, err = uuid.Parse(insertResp.Data.ID)
 		Expect(err).NotTo(HaveOccurred())
+
+		// ...and subsequent reads never return it
+		listResp, err := srv.GetValue().Client().Webhooks.V1.GetManyConfigs(
+			ctx,
+			operations.GetManyConfigsRequest{},
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(listResp.ConfigsResponse.Cursor.Data).To(HaveLen(1))
 	})
 
 	It("inserting an invalid config without event types", func() {

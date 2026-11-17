@@ -3,8 +3,13 @@
 package components
 
 type ConfigUser struct {
-	Endpoint   string   `json:"endpoint"`
-	Secret     *string  `json:"secret,omitempty"`
+	// URL events are delivered to
+	Endpoint string `json:"endpoint"`
+	// Secret used to sign delivery payloads.
+	// On creation (POST /configs): generated automatically when omitted, null or empty.
+	// On update (PUT /configs/{id}): omitted, null or empty preserves the stored secret unchanged; a non-empty value must be base64 of exactly 24 bytes and replaces the stored secret.
+	Secret *string `json:"secret,omitempty"`
+	// Types of event that trigger a delivery to this endpoint
 	EventTypes []string `json:"eventTypes"`
 }
 

@@ -7,17 +7,29 @@ import (
 	"time"
 )
 
+// Attempt - A single delivery attempt made against a webhook endpoint
 type Attempt struct {
-	ID             string         `json:"id"`
-	WebhookID      string         `json:"webhookID"`
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
-	Config         WebhooksConfig `json:"config"`
-	Payload        string         `json:"payload"`
-	StatusCode     int64          `json:"statusCode"`
-	RetryAttempt   int64          `json:"retryAttempt"`
-	Status         string         `json:"status"`
-	NextRetryAfter *time.Time     `json:"nextRetryAfter,omitempty"`
+	// Unique identifier of the attempt
+	ID string `json:"id"`
+	// Identifier of the webhook this attempt belongs to
+	WebhookID string `json:"webhookID"`
+	// When the attempt was created
+	CreatedAt time.Time `json:"createdAt"`
+	// When the attempt was last modified
+	UpdatedAt time.Time `json:"updatedAt"`
+	// A webhook endpoint together with the event types it subscribes to.
+	// The stored signing secret is never included in this representation: it is disclosed exactly once, in ConfigWithSecretResponse, at creation (POST /configs) and at secret rotation (PUT /configs/{id}/secret/change).
+	Config WebhooksConfig `json:"config"`
+	// The event body sent to the endpoint
+	Payload string `json:"payload"`
+	// HTTP status code returned by the endpoint
+	StatusCode int64 `json:"statusCode"`
+	// Position of this attempt in the retry sequence
+	RetryAttempt int64 `json:"retryAttempt"`
+	// Current status of the attempt
+	Status string `json:"status"`
+	// When the next retry is scheduled, absent once the attempt is settled
+	NextRetryAfter *time.Time `json:"nextRetryAfter,omitempty"`
 }
 
 func (a Attempt) MarshalJSON() ([]byte, error) {

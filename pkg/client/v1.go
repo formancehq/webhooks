@@ -378,12 +378,12 @@ func (s *V1) InsertConfig(ctx context.Context, request components.ConfigUser, op
 	case httpRes.StatusCode == 200:
 		switch {
 		case utils.MatchContentType(httpRes.Header.Get("Content-Type"), `application/json`):
-			var out components.ConfigResponse
+			var out components.ConfigWithSecretResponse
 			if err := utils.UnmarshalJsonFromResponseBody(bytes.NewBuffer(rawBody), &out, ""); err != nil {
 				return nil, err
 			}
 
-			res.ConfigResponse = &out
+			res.ConfigWithSecretResponse = &out
 		default:
 			return nil, sdkerrors.NewSDKError(fmt.Sprintf("unknown content-type received: %s", httpRes.Header.Get("Content-Type")), httpRes.StatusCode, string(rawBody), httpRes)
 		}
@@ -576,6 +576,8 @@ func (s *V1) DeleteConfig(ctx context.Context, request operations.DeleteConfigRe
 
 // UpdateConfig - Update one config
 // Update a webhooks config by ID.
+//
+// Secret semantics on update: an omitted, null or empty `secret` preserves the stored signing secret unchanged (no rotation, no generation). A non-empty `secret` must be base64 of exactly 24 bytes and replaces the stored secret (explicit rotation). Use `PUT /configs/{id}/secret/change` to rotate with a generated secret.
 func (s *V1) UpdateConfig(ctx context.Context, request operations.UpdateConfigRequest, opts ...operations.Option) (*operations.UpdateConfigResponse, error) {
 	hookCtx := hooks.HookContext{
 		Context:        ctx,
@@ -1451,12 +1453,12 @@ func (s *V1) ChangeConfigSecret(ctx context.Context, request operations.ChangeCo
 	case httpRes.StatusCode == 200:
 		switch {
 		case utils.MatchContentType(httpRes.Header.Get("Content-Type"), `application/json`):
-			var out components.ConfigResponse
+			var out components.ConfigWithSecretResponse
 			if err := utils.UnmarshalJsonFromResponseBody(bytes.NewBuffer(rawBody), &out, ""); err != nil {
 				return nil, err
 			}
 
-			res.ConfigResponse = &out
+			res.ConfigWithSecretResponse = &out
 		default:
 			return nil, sdkerrors.NewSDKError(fmt.Sprintf("unknown content-type received: %s", httpRes.Header.Get("Content-Type")), httpRes.StatusCode, string(rawBody), httpRes)
 		}

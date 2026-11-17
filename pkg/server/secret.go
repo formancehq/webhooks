@@ -32,8 +32,10 @@ func (h *serverHandler) changeSecretHandle(w http.ResponseWriter, r *http.Reques
 	c, err := h.store.UpdateOneConfigSecret(r.Context(), id, sec.Secret)
 	if err == nil || errors.Is(err, storage.ErrConfigNotModified) {
 		logging.FromContext(r.Context()).Debugf("PUT %s/%s%s", PathConfigs, id, PathChangeSecret)
-		resp := api.BaseResponse[webhooks.Config]{
-			Data: &c,
+		// One-time disclosure: the new secret is returned exactly here and
+		// never again on any read path.
+		resp := api.BaseResponse[webhooks.ConfigWithSecret]{
+			Data: webhooks.NewConfigWithSecretPtr(c),
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			logging.FromContext(r.Context()).Errorf("json.Encoder.Encode: %s", err)

@@ -20,7 +20,9 @@ func (h *serverHandler) updateOneConfigHandle(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if err := cfg.Validate(); err != nil {
+	// On update an omitted/empty secret preserves the stored one; only an
+	// explicit non-empty secret rotates it.
+	if err := cfg.ValidateForUpdate(); err != nil {
 		err := errors.Wrap(err, "invalid config")
 		logging.FromContext(r.Context()).Errorf(err.Error())
 		apierrors.ResponseError(w, r, apierrors.NewValidationError(err.Error()))

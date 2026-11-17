@@ -3,6 +3,8 @@
 package components
 
 type ConfigResponse struct {
+	// A webhook endpoint together with the event types it subscribes to.
+	// The stored signing secret is never included in this representation: it is disclosed exactly once, in ConfigWithSecretResponse, at creation (POST /configs) and at secret rotation (PUT /configs/{id}/secret/change).
 	Data WebhooksConfig `json:"data"`
 }
 

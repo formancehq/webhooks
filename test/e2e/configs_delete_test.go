@@ -28,7 +28,7 @@ var _ = Context("Config deletion", func() {
 		})
 		ctx        = logging.TestingContext()
 		secret     = webhooks.NewSecret()
-		insertResp *components.ConfigResponse
+		insertResp *components.ConfigWithSecretResponse
 	)
 
 	BeforeEach(func() {
@@ -45,7 +45,7 @@ var _ = Context("Config deletion", func() {
 		)
 		Expect(err).ToNot(HaveOccurred())
 
-		insertResp = response.ConfigResponse
+		insertResp = response.ConfigWithSecretResponse
 	})
 
 	Context("deleting the inserted one", func() {

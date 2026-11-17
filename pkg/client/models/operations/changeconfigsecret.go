@@ -28,8 +28,8 @@ func (o *ChangeConfigSecretRequest) GetConfigChangeSecret() *components.ConfigCh
 
 type ChangeConfigSecretResponse struct {
 	HTTPMeta components.HTTPMetadata `json:"-"`
-	// Secret successfully changed.
-	ConfigResponse *components.ConfigResponse
+	// Secret successfully changed. The response carries the new signing secret: this is the only moment the new secret is disclosed. Later reads never return it.
+	ConfigWithSecretResponse *components.ConfigWithSecretResponse
 }
 
 func (o *ChangeConfigSecretResponse) GetHTTPMeta() components.HTTPMetadata {
@@ -39,9 +39,9 @@ func (o *ChangeConfigSecretResponse) GetHTTPMeta() components.HTTPMetadata {
 	return o.HTTPMeta
 }
 
-func (o *ChangeConfigSecretResponse) GetConfigResponse() *components.ConfigResponse {
+func (o *ChangeConfigSecretResponse) GetConfigWithSecretResponse() *components.ConfigWithSecretResponse {
 	if o == nil {
 		return nil
 	}
-	return o.ConfigResponse
+	return o.ConfigWithSecretResponse
 }

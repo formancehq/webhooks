@@ -7,14 +7,23 @@ import (
 	"time"
 )
 
+// WebhooksConfig - A webhook endpoint together with the event types it subscribes to.
+// The stored signing secret is never included in this representation: it is disclosed exactly once, in ConfigWithSecretResponse, at creation (POST /configs) and at secret rotation (PUT /configs/{id}/secret/change).
 type WebhooksConfig struct {
-	ID         string    `json:"id"`
-	Endpoint   string    `json:"endpoint"`
-	Secret     string    `json:"secret"`
-	EventTypes []string  `json:"eventTypes"`
-	Active     bool      `json:"active"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
+	// Unique identifier of the configuration
+	ID string `json:"id"`
+	// Name of the webhook configuration
+	Name string `json:"name"`
+	// URL events are delivered to
+	Endpoint string `json:"endpoint"`
+	// Types of event that trigger a delivery to this endpoint
+	EventTypes []string `json:"eventTypes"`
+	// Whether the configuration is active. Deactivated configurations receive no deliveries
+	Active bool `json:"active"`
+	// When the configuration was created
+	CreatedAt time.Time `json:"createdAt"`
+	// When the configuration was last modified
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 func (w WebhooksConfig) MarshalJSON() ([]byte, error) {
@@ -35,18 +44,18 @@ func (o *WebhooksConfig) GetID() string {
 	return o.ID
 }
 
+func (o *WebhooksConfig) GetName() string {
+	if o == nil {
+		return ""
+	}
+	return o.Name
+}
+
 func (o *WebhooksConfig) GetEndpoint() string {
 	if o == nil {
 		return ""
 	}
 	return o.Endpoint
-}
-
-func (o *WebhooksConfig) GetSecret() string {
-	if o == nil {
-		return ""
-	}
-	return o.Secret
 }
 
 func (o *WebhooksConfig) GetEventTypes() []string {

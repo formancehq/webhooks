@@ -7,12 +7,19 @@ import (
 	"time"
 )
 
+// ReplayDeliveriesResult - Outcome of a bulk replay, counting the deliveries it moved
 type ReplayDeliveriesResult struct {
-	Replayed    int64     `json:"replayed"`
-	Expedited   int64     `json:"expedited"`
-	Skipped     int64     `json:"skipped"`
-	HasMore     bool      `json:"hasMore"`
-	NextCursor  *string   `json:"nextCursor,omitempty"`
+	// Number of failed deliveries moved back to pending and scheduled for a new retry cycle
+	Replayed int64 `json:"replayed"`
+	// Number of already-pending deliveries whose next attempt was brought forward to now
+	Expedited int64 `json:"expedited"`
+	// Number of candidates left untouched, because their status changed before the replay applied
+	Skipped int64 `json:"skipped"`
+	// Whether further deliveries match and can be processed with the returned cursor
+	HasMore bool `json:"hasMore"`
+	// Cursor to pass to the next replay call to continue where this one stopped
+	NextCursor *string `json:"nextCursor,omitempty"`
+	// Upper time bound actually applied, echoed so a paginated replay stays on a fixed window
 	CreatedAtTo time.Time `json:"createdAtTo"`
 }
 
